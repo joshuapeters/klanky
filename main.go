@@ -22,7 +22,7 @@ func newRootCmd() *cobra.Command {
 		cfgPath = abs
 	}
 
-	root.AddCommand(&cobra.Command{Use: "init", Short: "Bootstrap a new project for this repo"})
+	root.AddCommand(newInitCmd(cfgPath))
 	root.AddCommand(newProjectCmd(cfgPath))
 	root.AddCommand(newFeatureCmd(cfgPath))
 	root.AddCommand(newTaskCmd(cfgPath))
