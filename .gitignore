@@ -1,0 +1,13 @@
+# Build artifacts
+/klanky
+/klanky.exe
+
+# Klanky runtime state
+.klanky/logs/
+.klanky/runner-*.lock
+.klanky/specs/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
