@@ -23,7 +23,7 @@ func newRootCmd() *cobra.Command {
 	}
 
 	root.AddCommand(&cobra.Command{Use: "init", Short: "Bootstrap a new project for this repo"})
-	root.AddCommand(&cobra.Command{Use: "project", Short: "Manage project linkage"})
+	root.AddCommand(newProjectCmd(cfgPath))
 	root.AddCommand(newFeatureCmd(cfgPath))
 	root.AddCommand(newTaskCmd(cfgPath))
 
