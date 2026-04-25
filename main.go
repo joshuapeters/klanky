@@ -3,9 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
+
+const defaultConfigPath = ".klankyrc.json"
 
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
@@ -14,9 +17,14 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage: true,
 	}
 
+	cfgPath := defaultConfigPath
+	if abs, err := filepath.Abs(defaultConfigPath); err == nil {
+		cfgPath = abs
+	}
+
 	root.AddCommand(&cobra.Command{Use: "init", Short: "Bootstrap a new project for this repo"})
 	root.AddCommand(&cobra.Command{Use: "project", Short: "Manage project linkage"})
-	root.AddCommand(&cobra.Command{Use: "feature", Short: "Manage features"})
+	root.AddCommand(newFeatureCmd(cfgPath))
 	root.AddCommand(&cobra.Command{Use: "task", Short: "Manage tasks"})
 
 	return root
