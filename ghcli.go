@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 )
 
@@ -74,4 +76,56 @@ func argsEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// RunGraphQL executes a GraphQL query via `gh api graphql`, parses the response,
+// and unmarshals .data into dest. Variables are emitted in sorted key order so
+// test stubs can rely on deterministic argv. Numbers/bools use -F (typed),
+// strings use -f.
+func RunGraphQL(ctx context.Context, r Runner, query string, vars map[string]any, dest any) error {
+	args := []string{"api", "graphql", "-f", "query=" + query}
+
+	keys := make([]string, 0, len(vars))
+	for k := range vars {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		switch v := vars[k].(type) {
+		case string:
+			args = append(args, "-f", fmt.Sprintf("%s=%s", k, v))
+		case int, int64, float64, bool:
+			args = append(args, "-F", fmt.Sprintf("%s=%v", k, v))
+		default:
+			return fmt.Errorf("unsupported variable type for %q: %T", k, v)
+		}
+	}
+
+	out, err := r.Run(ctx, "gh", args...)
+	if err != nil {
+		return fmt.Errorf("graphql call: %w", err)
+	}
+
+	var envelope struct {
+		Data   json.RawMessage `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(out, &envelope); err != nil {
+		return fmt.Errorf("parse graphql envelope: %w", err)
+	}
+	if len(envelope.Errors) > 0 {
+		msgs := make([]string, len(envelope.Errors))
+		for i, e := range envelope.Errors {
+			msgs[i] = e.Message
+		}
+		return fmt.Errorf("graphql errors: %s", strings.Join(msgs, "; "))
+	}
+	if dest != nil && len(envelope.Data) > 0 {
+		if err := json.Unmarshal(envelope.Data, dest); err != nil {
+			return fmt.Errorf("parse graphql data: %w", err)
+		}
+	}
+	return nil
 }
