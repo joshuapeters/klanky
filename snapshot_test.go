@@ -14,7 +14,7 @@ func mockConfig() *Config {
 			URL: "https://github.com/users/alice/projects/1", Number: 1,
 			NodeID: "PVT_x", OwnerLogin: "alice", OwnerType: "User",
 			Fields: ConfigFields{
-				Phase:  ConfigField{ID: "PVTF_p", Name: "Phase"},
+				Phase: ConfigField{ID: "PVTF_p", Name: "Phase"},
 				Status: ConfigStatusField{ID: "PVTSSF_s", Name: "Status",
 					Options: map[string]string{
 						"Todo": "a", "In Progress": "b",

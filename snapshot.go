@@ -34,7 +34,7 @@ type TaskInfo struct {
 type PRInfo struct {
 	Number      int    `json:"number"`
 	URL         string `json:"url"`
-	State       string `json:"state"`  // "OPEN" / "CLOSED" / "MERGED"
+	State       string `json:"state"` // "OPEN" / "CLOSED" / "MERGED"
 	Closed      bool   `json:"closed"`
 	Merged      bool   `json:"merged"`
 	HeadRefName string `json:"headRefName"`
