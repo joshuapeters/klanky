@@ -2,10 +2,15 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/spf13/cobra"
 )
+
+const defaultTaskTimeout = 20 * time.Minute
 
 func newRunCmd(cfgPath string) *cobra.Command {
 	cmd := &cobra.Command{
@@ -23,10 +28,29 @@ func newRunCmd(cfgPath string) *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(),
-				"TODO: not implemented (would run feature #%d in repo %s/%s)\n",
-				featureID, cfg.Repo.Owner, cfg.Repo.Name)
-			return nil
+			repoRoot, err := filepath.Abs(filepath.Dir(cfgPath))
+			if err != nil {
+				return fmt.Errorf("resolve repo root: %w", err)
+			}
+
+			wtRoot, err := DefaultWorktreeRoot()
+			if err != nil {
+				return err
+			}
+
+			progress := NewProgress(os.Stderr, time.Now)
+
+			return RunFeature(cmd.Context(), RunFeatureDeps{
+				Runner:       RealRunner{},
+				Spawner:      RealSpawner{},
+				Config:       cfg,
+				RepoRoot:     repoRoot,
+				FeatureID:    featureID,
+				WorktreeRoot: wtRoot,
+				Progress:     progress,
+				SummaryOut:   cmd.OutOrStdout(),
+				Timeout:      defaultTaskTimeout,
+			})
 		},
 	}
 	return cmd
