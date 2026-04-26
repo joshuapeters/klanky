@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -234,6 +233,3 @@ func TestRunAgent_LogFile_CreatedEvenOnEarlyExit(t *testing.T) {
 		t.Errorf("log file not created: %v", err)
 	}
 }
-
-// Sanity check on bytes.Buffer assertion shape — ensures stdout writer wiring works.
-var _ = bytes.NewBuffer
