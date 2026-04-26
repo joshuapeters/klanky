@@ -8,7 +8,16 @@ import (
 	"time"
 )
 
+// klankyAttemptSentinel marks a comment posted by the runner as the breadcrumb
+// from one *agent attempt* (success-or-fail). CountPriorAttempts uses it to
+// derive the attempt counter shown in the summary.
 const klankyAttemptSentinel = "<!-- klanky-attempt -->"
+
+// klankyReconcileSentinel marks a comment posted by the reconcile pass — e.g.
+// "PR was closed without merging" or "Status was Done but issue is open."
+// Distinct from the attempt sentinel so reconcile breadcrumbs don't inflate
+// the agent-attempt count.
+const klankyReconcileSentinel = "<!-- klanky-reconcile -->"
 
 // BreadcrumbData is the substitution input for BuildBreadcrumb.
 type BreadcrumbData struct {

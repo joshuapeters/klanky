@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -32,8 +36,19 @@ func newRootCmd() *cobra.Command {
 }
 
 func main() {
-	if err := newRootCmd().Execute(); err != nil {
+	// Signal-aware context so Ctrl-C cancels the runner cleanly: errgroup
+	// cancellation propagates into RealSpawner.Cancel which SIGKILLs the
+	// agent process group, defer-released lock file, and a non-zero exit
+	// code (130 = POSIX SIGINT).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	err := newRootCmd().ExecuteContext(ctx)
+	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			os.Exit(130)
+		}
 		os.Exit(1)
 	}
 }

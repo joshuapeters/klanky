@@ -256,7 +256,7 @@ func applyReconcile(ctx context.Context, r Runner, cfg *Config, snap *Snapshot, 
 			fmt.Fprintf(os.Stderr, "klanky: reconcile WriteStatus #%d → %s failed: %v\n", a.TaskNumber, a.NewStatus, err)
 		}
 		if a.Breadcrumb != "" {
-			body := fmt.Sprintf("%s\n**Klanky reconcile**\n\n%s\n", klankyAttemptSentinel, a.Breadcrumb)
+			body := fmt.Sprintf("%s\n**Klanky reconcile**\n\n%s\n", klankyReconcileSentinel, a.Breadcrumb)
 			if err := PostBreadcrumb(ctx, r, cfg.Repo.Owner+"/"+cfg.Repo.Name, a.TaskNumber, body); err != nil {
 				fmt.Fprintf(os.Stderr, "klanky: reconcile PostBreadcrumb #%d failed: %v\n", a.TaskNumber, err)
 			}
