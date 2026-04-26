@@ -152,10 +152,7 @@ func runOneTask(ctx context.Context, d RunFeatureDeps, snap *Snapshot, task Task
 	logPath := filepath.Join(d.RepoRoot, ".klanky", "logs", fmt.Sprintf("task-%d.log", task.Number))
 
 	if err := EnsureCleanWorktree(ctx, d.Runner, d.RepoRoot, wtPath, branch, "main"); err != nil {
-		return TaskResult{
-			TaskNumber: task.Number, Outcome: OutcomeNeedsAttention,
-			OutcomeReason: fmt.Sprintf("worktree setup failed: %v", err),
-		}
+		return d.markEarlyFailure(ctx, task, repoSlug, fmt.Sprintf("worktree setup failed: %v", err))
 	}
 
 	if err := WriteStatus(ctx, d.Runner, d.Config, task.ItemID, "In Progress", time.Second); err != nil {
@@ -170,10 +167,7 @@ func runOneTask(ctx context.Context, d RunFeatureDeps, snap *Snapshot, task Task
 		Timeout: d.Timeout,
 	})
 	if err != nil {
-		return TaskResult{
-			TaskNumber: task.Number, Outcome: OutcomeNeedsAttention,
-			OutcomeReason: fmt.Sprintf("agent error: %v", err),
-		}
+		return d.markEarlyFailure(ctx, task, repoSlug, fmt.Sprintf("agent error: %v", err))
 	}
 
 	switch res.Outcome {
@@ -205,6 +199,33 @@ func runOneTask(ctx context.Context, d RunFeatureDeps, snap *Snapshot, task Task
 		d.Progress.TaskNeedsAttention(task.Number, attempt)
 	}
 	return *res
+}
+
+// markEarlyFailure handles the case where a task can't even start running
+// (worktree setup failed, claude binary missing, log file un-creatable). The
+// kanban board must reflect that the task is stuck, so we write Status =
+// Needs Attention and post a breadcrumb — both best-effort.
+func (d RunFeatureDeps) markEarlyFailure(ctx context.Context, task TaskInfo, repoSlug, reason string) TaskResult {
+	if err := WriteStatus(ctx, d.Runner, d.Config, task.ItemID, "Needs Attention", time.Second); err != nil {
+		d.Progress.Note("warn: could not set Status=Needs Attention for #%d: %v", task.Number, err)
+	}
+	prior, _ := CountPriorAttempts(ctx, d.Runner, repoSlug, task.Number)
+	attempt := prior + 1
+	body := BuildBreadcrumb(BreadcrumbData{
+		Attempt: attempt, StartedAt: time.Now(), Duration: 0,
+		Outcome: reason, WorktreePath: WorktreePath(d.WorktreeRoot, d.Config.Repo.Name, d.FeatureID, task.Number),
+		LogPath: filepath.Join(d.RepoRoot, ".klanky", "logs", fmt.Sprintf("task-%d.log", task.Number)),
+	})
+	if err := PostBreadcrumb(ctx, d.Runner, repoSlug, task.Number, body); err != nil {
+		d.Progress.Note("warn: could not post breadcrumb for #%d: %v", task.Number, err)
+	}
+	d.Progress.TaskNeedsAttention(task.Number, attempt)
+	return TaskResult{
+		TaskNumber:    task.Number,
+		Outcome:       OutcomeNeedsAttention,
+		OutcomeReason: reason,
+		StartedAt:     time.Now(),
+	}
 }
 
 func tailLog(path string, n int) []string {
