@@ -26,6 +26,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newProjectCmd(cfgPath))
 	root.AddCommand(newFeatureCmd(cfgPath))
 	root.AddCommand(newTaskCmd(cfgPath))
+	root.AddCommand(newRunCmd(cfgPath))
 
 	return root
 }
