@@ -31,12 +31,14 @@ type TaskInfo struct {
 	Status string // "Todo" / "In Progress" / "In Review" / "Needs Attention" / "Done" / "" if unset
 }
 
+// PRInfo is the subset of PR fields the runner consults. State carries the
+// merge/close information ("OPEN" / "CLOSED" / "MERGED"); explicit Closed and
+// Merged booleans were removed because (a) State subsumes them and (b) recent
+// `gh pr list --json` doesn't expose `merged`, only `mergedAt`.
 type PRInfo struct {
 	Number      int    `json:"number"`
 	URL         string `json:"url"`
-	State       string `json:"state"` // "OPEN" / "CLOSED" / "MERGED"
-	Closed      bool   `json:"closed"`
-	Merged      bool   `json:"merged"`
+	State       string `json:"state"`
 	HeadRefName string `json:"headRefName"`
 }
 
@@ -170,7 +172,7 @@ func FetchSnapshot(ctx context.Context, r Runner, cfg *Config, featureID int) (*
 		"--repo", prSlug,
 		"--state", "all",
 		"--search", prSearch,
-		"--json", "headRefName,number,url,state,closed,merged",
+		"--json", "headRefName,number,url,state",
 		"--limit", "200",
 	)
 	if err != nil {

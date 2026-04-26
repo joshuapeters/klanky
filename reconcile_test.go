@@ -96,7 +96,7 @@ func TestReconcile_Row7_InReviewWithClosedNotMergedGoesNeedsAttention(t *testing
 			{Number: 101, ItemID: "I1", State: "OPEN", Status: "In Review", Phase: ptrInt(1)},
 		},
 		PRsByBranch: map[string]PRInfo{
-			"klanky/feat-100/task-101": {Number: 201, State: "CLOSED", Closed: true, Merged: false},
+			"klanky/feat-100/task-101": {Number: 201, State: "CLOSED"},
 		},
 	}
 	got := Reconcile(snap, 100)

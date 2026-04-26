@@ -47,7 +47,7 @@ func TestRunFeature_HappyPath_OneEligibleTaskOpensPR(t *testing.T) {
 		"--repo", "alice/proj",
 		"--state", "all",
 		"--search", "head:klanky/feat-7/",
-		"--json", "headRefName,number,url,state,closed,merged",
+		"--json", "headRefName,number,url,state",
 		"--limit", "200"},
 		[]byte(`[]`), nil)
 
@@ -138,7 +138,7 @@ func TestRunFeature_FeatureComplete_ShortCircuits(t *testing.T) {
 		"--repo", "alice/proj",
 		"--state", "all",
 		"--search", "head:klanky/feat-7/",
-		"--json", "headRefName,number,url,state,closed,merged",
+		"--json", "headRefName,number,url,state",
 		"--limit", "200"},
 		[]byte(`[]`), nil)
 

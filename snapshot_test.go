@@ -66,13 +66,13 @@ func TestFetchSnapshot_ParsesTasksAndProjectFields(t *testing.T) {
 			"-f", "repo=proj"},
 		[]byte(graphqlResp), nil)
 
-	prResp := `[{"headRefName":"klanky/feat-100/task-101","number":201,"url":"https://github.com/alice/proj/pull/201","state":"OPEN","closed":false,"merged":false}]`
+	prResp := `[{"headRefName":"klanky/feat-100/task-101","number":201,"url":"https://github.com/alice/proj/pull/201","state":"OPEN"}]`
 	r.Stub(
 		[]string{"gh", "pr", "list",
 			"--repo", "alice/proj",
 			"--state", "all",
 			"--search", "head:klanky/feat-100/",
-			"--json", "headRefName,number,url,state,closed,merged",
+			"--json", "headRefName,number,url,state",
 			"--limit", "200"},
 		[]byte(prResp), nil)
 
@@ -147,7 +147,7 @@ func TestFetchSnapshot_HandlesMissingPhaseAndStatus(t *testing.T) {
 			"--repo", "alice/proj",
 			"--state", "all",
 			"--search", "head:klanky/feat-100/",
-			"--json", "headRefName,number,url,state,closed,merged",
+			"--json", "headRefName,number,url,state",
 			"--limit", "200"},
 		[]byte(`[]`), nil)
 
@@ -192,7 +192,7 @@ func TestFetchSnapshot_FiltersForeignProjectItems(t *testing.T) {
 			"--repo", "alice/proj",
 			"--state", "all",
 			"--search", "head:klanky/feat-100/",
-			"--json", "headRefName,number,url,state,closed,merged",
+			"--json", "headRefName,number,url,state",
 			"--limit", "200"},
 		[]byte(`[]`), nil)
 
@@ -233,7 +233,7 @@ func TestFetchSnapshot_RejectsTooManySubIssues(t *testing.T) {
 			"--repo", "alice/proj",
 			"--state", "all",
 			"--search", "head:klanky/feat-100/",
-			"--json", "headRefName,number,url,state,closed,merged",
+			"--json", "headRefName,number,url,state",
 			"--limit", "200"},
 		[]byte(`[]`), nil)
 
