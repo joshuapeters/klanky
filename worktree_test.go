@@ -43,6 +43,15 @@ func TestEnsureCleanWorktree_WipesExistingPath(t *testing.T) {
 	}
 }
 
+func TestRemoveWorktree_CallsGitWorktreeRemove(t *testing.T) {
+	r := NewFakeRunner()
+	r.Stub([]string{"git", "-C", "/repo", "worktree", "remove", "/some/path", "--force"}, nil, nil)
+
+	if err := RemoveWorktree(context.Background(), r, "/repo", "/some/path"); err != nil {
+		t.Fatalf("RemoveWorktree: %v", err)
+	}
+}
+
 func TestWorktreePath_StableLayout(t *testing.T) {
 	got := WorktreePath("/home/u/.klanky/worktrees", "myrepo", 7, 42)
 	want := "/home/u/.klanky/worktrees/myrepo/feat-7/task-42"

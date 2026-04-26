@@ -180,6 +180,9 @@ func runOneTask(ctx context.Context, d RunFeatureDeps, snap *Snapshot, task Task
 			prNum = res.PR.Number
 		}
 		d.Progress.TaskInReview(task.Number, prNum)
+		if err := RemoveWorktree(ctx, d.Runner, d.RepoRoot, wtPath); err != nil {
+			d.Progress.Note("warn: could not remove worktree for #%d: %v", task.Number, err)
+		}
 
 	case OutcomeNeedsAttention:
 		if err := WriteStatus(ctx, d.Runner, d.Config, task.ItemID, "Needs Attention", time.Second); err != nil {
