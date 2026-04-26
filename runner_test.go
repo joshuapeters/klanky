@@ -55,6 +55,7 @@ func TestRunFeature_HappyPath_OneEligibleTaskOpensPR(t *testing.T) {
 	wtPath := WorktreePath(filepath.Join(repoRoot, "wt-root"), "proj", 7, 42)
 	r.Stub([]string{"git", "-C", repoRoot, "worktree", "prune"}, nil, nil)
 	r.Stub([]string{"git", "-C", repoRoot, "worktree", "add", wtPath, "-b", "klanky/feat-7/task-42", "main"}, nil, nil)
+	r.Stub([]string{"git", "-C", repoRoot, "worktree", "remove", wtPath, "--force"}, nil, nil)
 
 	// Status writes (in-progress, then in-review). Both succeed first try.
 	r.Stub([]string{"gh", "project", "item-edit",

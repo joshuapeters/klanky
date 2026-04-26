@@ -42,3 +42,13 @@ func EnsureCleanWorktree(ctx context.Context, r Runner, repoRoot, wtPath, branch
 	}
 	return nil
 }
+
+// RemoveWorktree tears down the per-task worktree at wtPath. Uses --force so
+// untracked agent scratch files (TDD experiments, build artifacts) don't block
+// cleanup of an otherwise successful task.
+func RemoveWorktree(ctx context.Context, r Runner, repoRoot, wtPath string) error {
+	if _, err := r.Run(ctx, "git", "-C", repoRoot, "worktree", "remove", wtPath, "--force"); err != nil {
+		return fmt.Errorf("git worktree remove %s: %w", wtPath, err)
+	}
+	return nil
+}
