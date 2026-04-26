@@ -18,7 +18,7 @@ func TestRootCommand_Help_ListsAllSubcommands(t *testing.T) {
 	}
 
 	helpText := out.String()
-	for _, want := range []string{"init", "project", "feature", "task"} {
+	for _, want := range []string{"init", "project", "feature", "task", "run"} {
 		if !strings.Contains(helpText, want) {
 			t.Errorf("expected --help to mention %q; got:\n%s", want, helpText)
 		}
