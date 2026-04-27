@@ -122,4 +122,4 @@ The truth for "is this task done?" is whether the underlying GitHub issue is clo
 
 ## Status
 
-v1 personal tool. The user (you, or me, depending on who you are) is using it at Wistia. It is in production use but tightly scoped to one person, one repo, one machine. Generalization will happen if multiple people start asking for it. File issues if something is broken; don't expect a polished response.
+v1 personal tool. The user (you, or me, depending on who you are) is using it on your personal machine. It is in production use but tightly scoped to one person, one repo, one machine. Generalization will happen if multiple people start asking for it. File issues if something is broken; don't expect a polished response.
