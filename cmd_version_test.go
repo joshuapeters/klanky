@@ -7,19 +7,13 @@ import (
 )
 
 func TestVersionCommand_PrintsAllThreeFields(t *testing.T) {
-	// Override the package-level build vars so the test is deterministic
-	// regardless of how the binary was built. Restore them after.
-	origV, origC, origD := version, commit, date
-	version = "v9.9.9"
-	commit = "deadbeef"
-	date = "2026-05-01T00:00:00Z"
-	defer func() { version, commit, date = origV, origC, origD }()
+	t.Parallel()
 
 	out := &bytes.Buffer{}
-	cmd := newRootCmd()
+	cmd := newVersionCmd("v9.9.9", "deadbeef", "2026-05-01T00:00:00Z")
 	cmd.SetOut(out)
 	cmd.SetErr(out)
-	cmd.SetArgs([]string{"version"})
+	cmd.SetArgs([]string{})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("expected `version` to succeed, got: %v", err)
@@ -34,6 +28,8 @@ func TestVersionCommand_PrintsAllThreeFields(t *testing.T) {
 }
 
 func TestRootCommand_Help_ListsVersionSubcommand(t *testing.T) {
+	t.Parallel()
+
 	out := &bytes.Buffer{}
 	cmd := newRootCmd()
 	cmd.SetOut(out)
