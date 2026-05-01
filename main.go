@@ -41,7 +41,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newFeatureCmd(cfgPath))
 	root.AddCommand(newTaskCmd(cfgPath))
 	root.AddCommand(newRunCmd(cfgPath))
-	root.AddCommand(newVersionCmd())
+	root.AddCommand(newVersionCmd(version, commit, date))
 
 	return root
 }
