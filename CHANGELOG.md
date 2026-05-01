@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.0.2](https://github.com/joshuapeters/klanky/compare/v0.0.1...v0.0.2) (2026-05-01)
+
+
+### Bug Fixes
+
+* thread version metadata as params and drop fprintf err checks ([#18](https://github.com/joshuapeters/klanky/issues/18)) ([654d998](https://github.com/joshuapeters/klanky/commit/654d998c9ac2546209c1b6008d1166f3e1052ce7))
+
 ## 0.0.1 (2026-05-01)
 
 
