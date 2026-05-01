@@ -10,7 +10,7 @@ Existing AI-coding tools tend to either lock you into one agent at a time (inter
 
 ## Prerequisites
 
-- Go 1.22+ (the module pins 1.26 but earlier toolchains build fine; build from source for now — there is no binary release yet).
+- Go 1.22+ — only required if you build from source. Otherwise, download a release binary from the [releases page](https://github.com/joshuapeters/klanky/releases).
 - `gh` CLI installed and authenticated. The token needs the `project` scope:
   ```bash
   gh auth refresh -s project
@@ -20,13 +20,31 @@ Existing AI-coding tools tend to either lock you into one agent at a time (inter
 
 ## Install
 
+### From a release (recommended)
+
+Download the appropriate tarball for your platform from the [releases page](https://github.com/joshuapeters/klanky/releases), extract it, and put the `klanky` binary on your `PATH`:
+
+```bash
+# Replace VERSION, OS (darwin|linux), and ARCH (amd64|arm64) for your platform.
+curl -L "https://github.com/joshuapeters/klanky/releases/download/vVERSION/klanky_VERSION_OS_ARCH.tar.gz" \
+  | tar -xz -C /usr/local/bin klanky
+```
+
+Verify with:
+
+```bash
+klanky version
+```
+
+### From source
+
 ```bash
 git clone https://github.com/joshuapeters/klanky.git
 cd klanky
 go build -o klanky .
 ```
 
-Move the resulting `klanky` binary somewhere on your `PATH`.
+Move the resulting `klanky` binary somewhere on your `PATH`. Source builds report `version: dev`.
 
 ## Quick start
 
