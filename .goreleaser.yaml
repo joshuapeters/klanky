@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: klanky
+    main: .
+    binary: klanky
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    name_template: 'klanky_{{.Version}}_{{.Os}}_{{.Arch}}'
+    formats:
+      - tar.gz
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+# release-please owns CHANGELOG.md and the GitHub Release notes; goreleaser
+# only uploads binaries to the release that release-please already created.
+changelog:
+  disable: true
+
+release:
+  draft: false
+  prerelease: false
+  # release-please will have already created the GitHub Release shell when
+  # it tagged the merge commit; goreleaser updates that release with assets.
+  mode: append

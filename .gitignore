@@ -1,6 +1,7 @@
 # Build artifacts
 /klanky
 /klanky.exe
+/dist/
 
 # Klanky runtime state
 .klanky/logs/

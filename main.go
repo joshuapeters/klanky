@@ -14,10 +14,20 @@ import (
 
 const defaultConfigPath = ".klankyrc.json"
 
+// Build-time metadata. Overwritten at link time by goreleaser via -ldflags.
+// Local `go build` leaves these at their default sentinel values.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:          "klanky",
 		Short:        "Orchestrate parallel coding agents against a GitHub-issue task graph",
+		Long:         fmt.Sprintf("Orchestrate parallel coding agents against a GitHub-issue task graph.\n\nVersion: %s (%s) built %s", version, commit, date),
+		Version:      version,
 		SilenceUsage: true,
 	}
 
@@ -31,6 +41,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newFeatureCmd(cfgPath))
 	root.AddCommand(newTaskCmd(cfgPath))
 	root.AddCommand(newRunCmd(cfgPath))
+	root.AddCommand(newVersionCmd())
 
 	return root
 }
