@@ -13,126 +13,284 @@ import (
 
 func TestParseProjectURL(t *testing.T) {
 	cases := []struct {
-		url           string
-		wantOwner     string
-		wantNumber    int
-		wantOwnerType string
+		in        string
+		owner     string
+		number    int
+		ownerType string
+		wantErr   bool
 	}{
-		{"https://github.com/users/alice/projects/4", "alice", 4, "User"},
-		{"https://github.com/orgs/wistia/projects/12", "wistia", 12, "Organization"},
-		{"https://github.com/orgs/wistia/projects/12/views/1", "wistia", 12, "Organization"},
+		{"https://github.com/users/joshuapeters/projects/4", "joshuapeters", 4, "User", false},
+		{"https://github.com/orgs/wistia/projects/12/views/3", "wistia", 12, "Organization", false},
+		{"https://github.com/repos/x/y/issues/1", "", 0, "", true},
+		{"https://github.com/orgs/wistia/projects/abc", "", 0, "", true},
+		{"not-a-url", "", 0, "", true},
 	}
 	for _, c := range cases {
-		t.Run(c.url, func(t *testing.T) {
-			owner, num, ot, err := ParseProjectURL(c.url)
-			if err != nil {
-				t.Fatalf("ParseProjectURL: %v", err)
-			}
-			if owner != c.wantOwner || num != c.wantNumber || ot != c.wantOwnerType {
-				t.Errorf("got (%q, %d, %q), want (%q, %d, %q)",
-					owner, num, ot, c.wantOwner, c.wantNumber, c.wantOwnerType)
-			}
-		})
-	}
-}
-
-func TestParseProjectURL_Invalid(t *testing.T) {
-	bad := []string{
-		"",
-		"not a url",
-		"https://github.com/alice/foo/issues/1",
-		"https://github.com/users/alice/projects/notanumber",
-	}
-	for _, u := range bad {
-		if _, _, _, err := ParseProjectURL(u); err == nil {
-			t.Errorf("expected error for %q", u)
+		owner, number, ownerType, err := ParseProjectURL(c.in)
+		if (err != nil) != c.wantErr {
+			t.Errorf("ParseProjectURL(%q) err = %v, wantErr %v", c.in, err, c.wantErr)
+			continue
+		}
+		if c.wantErr {
+			continue
+		}
+		if owner != c.owner || number != c.number || ownerType != c.ownerType {
+			t.Errorf("ParseProjectURL(%q) = (%q, %d, %q), want (%q, %d, %q)",
+				c.in, owner, number, ownerType, c.owner, c.number, c.ownerType)
 		}
 	}
 }
 
-func TestProjectLink_ValidatesAndWritesConfig(t *testing.T) {
+// seedConfig writes a minimal config and returns its path.
+func seedConfig(t *testing.T, projects map[string]config.Project) string {
+	t.Helper()
 	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, ".klankyrc.json")
+	path := filepath.Join(dir, ".klankyrc.json")
+	cfg := &config.Config{
+		SchemaVersion: config.SchemaVersion,
+		Repo:          config.Repo{Owner: "joshuapeters", Name: "klanky"},
+		Projects:      projects,
+	}
+	if err := config.SaveConfig(path, cfg); err != nil {
+		t.Fatalf("seedConfig: %v", err)
+	}
+	return path
+}
 
-	fake := gh.NewFakeRunner()
+// stubConformantProject populates the gh runner with a happy-path snapshot of
+// gh CLI calls for a project that conforms to klanky's schema.
+func stubConformantProject(fake *gh.FakeRunner, owner string, number int, projectID, title string) {
 	fake.Stub(
-		[]string{"gh", "project", "view", "4", "--owner", "alice", "--format", "json"},
-		[]byte(`{"id":"PVT_x","number":4,"url":"https://github.com/users/alice/projects/4","title":"T"}`), nil,
+		[]string{"gh", "project", "view", "4", "--owner", owner, "--format", "json"},
+		[]byte(`{"id":"`+projectID+`","number":4,"url":"https://github.com/users/`+owner+`/projects/4","title":"`+title+`"}`),
+		nil,
 	)
 	fake.Stub(
-		[]string{"gh", "project", "field-list", "4", "--owner", "alice", "--format", "json"},
+		[]string{"gh", "project", "field-list", "4", "--owner", owner, "--format", "json"},
 		[]byte(`{"fields":[
-			{"id":"PVTF_p","name":"Phase","type":"ProjectV2Field"},
-			{"id":"PVTSSF_s","name":"Status","type":"ProjectV2SingleSelectField","options":[
-				{"id":"t","name":"Todo"},{"id":"ip","name":"In Progress"},
-				{"id":"ir","name":"In Review"},{"id":"na","name":"Needs Attention"},
-				{"id":"d","name":"Done"}
+			{"id":"PVTSSF_status","name":"Status","type":"ProjectV2SingleSelectField","options":[
+				{"id":"opt_todo","name":"Todo"},
+				{"id":"opt_inp","name":"In Progress"},
+				{"id":"opt_inr","name":"In Review"},
+				{"id":"opt_na","name":"Needs Attention"},
+				{"id":"opt_done","name":"Done"}
 			]}
 		]}`), nil,
 	)
-	fake.Stub(
-		[]string{"gh", "label", "list", "--repo", "alice/proj", "--search", "klanky:feature", "--json", "name"},
-		[]byte(`[{"name":"klanky:feature"}]`), nil,
-	)
+	_ = number // kept for future stubs that need it
+}
 
-	out := &bytes.Buffer{}
+func stubLabelMissing(fake *gh.FakeRunner, repo string) {
+	fake.Stub(
+		[]string{"gh", "label", "list", "--repo", repo, "--search", "klanky:tracked", "--json", "name"},
+		[]byte("[]"), nil,
+	)
+	fake.Stub(
+		[]string{"gh", "label", "create", "klanky:tracked",
+			"--repo", repo,
+			"--description", "Tracked by klanky — runner reads/writes this issue.",
+			"--color", "0E8A16"},
+		[]byte(""), nil,
+	)
+}
+
+func stubInventory(fake *gh.FakeRunner, projectID string, count int) {
+	const q = `query($pid: ID!) {
+  node(id: $pid) {
+    ... on ProjectV2 {
+      items(first: 1, query: "label:klanky:tracked is:open") { totalCount }
+    }
+  }
+}`
+	fake.Stub(
+		[]string{"gh", "api", "graphql", "-f", "query=" + q, "-f", "pid=" + projectID},
+		[]byte(`{"data":{"node":{"items":{"totalCount":`+itoa(count)+`}}}}`),
+		nil,
+	)
+}
+
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
+}
+
+func TestRunProjectLink_HappyPath(t *testing.T) {
+	cfgPath := seedConfig(t, nil)
+
+	fake := gh.NewFakeRunner()
+	stubConformantProject(fake, "joshuapeters", 4, "PVT_abc", "Auth System")
+	stubLabelMissing(fake, "joshuapeters/klanky")
+	stubInventory(fake, "PVT_abc", 7)
+
+	var out bytes.Buffer
 	err := RunProjectLink(context.Background(), fake, Options{
-		ProjectURL: "https://github.com/users/alice/projects/4",
-		RepoSlug:   "alice/proj",
+		ProjectURL: "https://github.com/users/joshuapeters/projects/4",
 		ConfigPath: cfgPath,
-	}, out)
+	}, &out)
 	if err != nil {
 		t.Fatalf("RunProjectLink: %v", err)
 	}
 
 	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
-		t.Fatalf("config not written: %v", err)
+		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.Project.NodeID != "PVT_x" {
-		t.Errorf("NodeID not stored: got %q", cfg.Project.NodeID)
+	p, ok := cfg.Projects["auth-system"]
+	if !ok {
+		t.Fatalf("expected slug 'auth-system' in config, got %v", cfg.Projects)
 	}
-	if cfg.Project.Fields.Status.Options["Done"] != "d" {
-		t.Errorf("Status options not stored")
+	if p.NodeID != "PVT_abc" {
+		t.Errorf("NodeID = %q", p.NodeID)
 	}
-	if cfg.Repo.Owner != "alice" || cfg.Repo.Name != "proj" {
-		t.Errorf("Repo not stored: %+v", cfg.Repo)
+	if p.Title != "Auth System" {
+		t.Errorf("Title = %q", p.Title)
+	}
+	if p.Fields.Status.Options["In Review"] != "opt_inr" {
+		t.Errorf("Status options[In Review] = %q", p.Fields.Status.Options["In Review"])
+	}
+	if !strings.Contains(out.String(), "auth-system") || !strings.Contains(out.String(), "7") {
+		t.Errorf("expected slug + count in output, got %q", out.String())
 	}
 }
 
-func TestProjectLink_NonConforming_PrintsDiff(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, ".klankyrc.json")
+func TestRunProjectLink_RejectsNonConformantProject(t *testing.T) {
+	cfgPath := seedConfig(t, nil)
 
 	fake := gh.NewFakeRunner()
 	fake.Stub(
-		[]string{"gh", "project", "view", "4", "--owner", "alice", "--format", "json"},
-		[]byte(`{"id":"PVT_x","number":4,"url":"https://github.com/users/alice/projects/4"}`), nil,
+		[]string{"gh", "project", "view", "4", "--owner", "joshuapeters", "--format", "json"},
+		[]byte(`{"id":"PVT_x","number":4,"url":"https://github.com/users/joshuapeters/projects/4","title":"Auth"}`),
+		nil,
 	)
+	// Status field missing 2 options.
 	fake.Stub(
-		[]string{"gh", "project", "field-list", "4", "--owner", "alice", "--format", "json"},
+		[]string{"gh", "project", "field-list", "4", "--owner", "joshuapeters", "--format", "json"},
 		[]byte(`{"fields":[
-			{"id":"PVTF_p","name":"Phase","type":"ProjectV2Field"},
-			{"id":"PVTSSF_s","name":"Status","type":"ProjectV2SingleSelectField","options":[
-				{"id":"t","name":"Todo"},{"id":"ip","name":"In Progress"},{"id":"d","name":"Done"}
+			{"id":"PVTSSF","name":"Status","type":"ProjectV2SingleSelectField","options":[
+				{"id":"a","name":"Todo"},{"id":"b","name":"Done"}
 			]}
 		]}`), nil,
 	)
-	fake.Stub(
-		[]string{"gh", "label", "list", "--repo", "alice/proj", "--search", "klanky:feature", "--json", "name"},
-		[]byte(`[{"name":"klanky:feature"}]`), nil,
-	)
-
-	out := &bytes.Buffer{}
 	err := RunProjectLink(context.Background(), fake, Options{
-		ProjectURL: "https://github.com/users/alice/projects/4",
-		RepoSlug:   "alice/proj",
+		ProjectURL: "https://github.com/users/joshuapeters/projects/4",
 		ConfigPath: cfgPath,
-	}, out)
+	}, &bytes.Buffer{})
 	if err == nil {
-		t.Fatal("expected error for non-conforming project")
+		t.Fatal("expected schema-mismatch error")
 	}
-	if !strings.Contains(err.Error(), "In Review") || !strings.Contains(err.Error(), "Needs Attention") {
-		t.Errorf("error should list missing options: %v", err)
+	for _, want := range []string{"In Review", "Needs Attention", "SCHEMA.md"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing %q", err, want)
+		}
+	}
+}
+
+func TestRunProjectLink_IdempotentReLinkKeepsSlug(t *testing.T) {
+	// Pre-populate config with the same nodeID under a custom slug that doesn't
+	// match the auto-derived one. Re-link should keep the existing slug and
+	// refresh the entry in place.
+	cfgPath := seedConfig(t, map[string]config.Project{
+		"my-custom-slug": {
+			NodeID: "PVT_abc",
+			Title:  "Old Title",
+			URL:    "stale",
+			Number: 4,
+		},
+	})
+
+	fake := gh.NewFakeRunner()
+	stubConformantProject(fake, "joshuapeters", 4, "PVT_abc", "Auth System")
+	// Label already exists this time.
+	fake.Stub(
+		[]string{"gh", "label", "list", "--repo", "joshuapeters/klanky",
+			"--search", "klanky:tracked", "--json", "name"},
+		[]byte(`[{"name":"klanky:tracked"}]`), nil,
+	)
+	stubInventory(fake, "PVT_abc", 0)
+
+	err := RunProjectLink(context.Background(), fake, Options{
+		ProjectURL: "https://github.com/users/joshuapeters/projects/4",
+		ConfigPath: cfgPath,
+	}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("RunProjectLink: %v", err)
+	}
+	cfg, _ := config.LoadConfig(cfgPath)
+	if _, ok := cfg.Projects["my-custom-slug"]; !ok {
+		t.Fatalf("expected slug 'my-custom-slug' to be kept; got %v", cfg.Projects)
+	}
+	if _, ok := cfg.Projects["auth-system"]; ok {
+		t.Errorf("did not expect a second slug entry for the same project")
+	}
+	p := cfg.Projects["my-custom-slug"]
+	if p.Title != "Auth System" || p.URL == "stale" {
+		t.Errorf("re-link did not refresh in place: %+v", p)
+	}
+}
+
+func TestRunProjectLink_SlugCollisionAppendsSuffix(t *testing.T) {
+	cfgPath := seedConfig(t, map[string]config.Project{
+		"auth-system": {NodeID: "OTHER", Title: "Other Auth", Number: 99},
+	})
+	fake := gh.NewFakeRunner()
+	stubConformantProject(fake, "joshuapeters", 4, "PVT_abc", "Auth System")
+	stubLabelMissing(fake, "joshuapeters/klanky")
+	stubInventory(fake, "PVT_abc", 0)
+
+	err := RunProjectLink(context.Background(), fake, Options{
+		ProjectURL: "https://github.com/users/joshuapeters/projects/4",
+		ConfigPath: cfgPath,
+	}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("RunProjectLink: %v", err)
+	}
+	cfg, _ := config.LoadConfig(cfgPath)
+	if _, ok := cfg.Projects["auth-system-2"]; !ok {
+		t.Errorf("expected -2 suffix on collision; got %v", cfg.Projects)
+	}
+}
+
+func TestRunProjectLink_SlugOverrideRefusesIfTakenByDifferentProject(t *testing.T) {
+	cfgPath := seedConfig(t, map[string]config.Project{
+		"taken": {NodeID: "OTHER"},
+	})
+	fake := gh.NewFakeRunner()
+	stubConformantProject(fake, "joshuapeters", 4, "PVT_abc", "Auth System")
+	stubLabelMissing(fake, "joshuapeters/klanky")
+	stubInventory(fake, "PVT_abc", 0)
+
+	err := RunProjectLink(context.Background(), fake, Options{
+		ProjectURL: "https://github.com/users/joshuapeters/projects/4",
+		Slug:       "taken",
+		ConfigPath: cfgPath,
+	}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "already in use") {
+		t.Errorf("expected 'already in use' error, got %v", err)
+	}
+}
+
+func TestRunProjectLink_SlugOverrideValidates(t *testing.T) {
+	cfgPath := seedConfig(t, nil)
+	fake := gh.NewFakeRunner()
+	stubConformantProject(fake, "joshuapeters", 4, "PVT_abc", "Auth System")
+	stubLabelMissing(fake, "joshuapeters/klanky")
+	stubInventory(fake, "PVT_abc", 0)
+
+	err := RunProjectLink(context.Background(), fake, Options{
+		ProjectURL: "https://github.com/users/joshuapeters/projects/4",
+		Slug:       "Bad Slug",
+		ConfigPath: cfgPath,
+	}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "slug") {
+		t.Errorf("expected slug validation error, got %v", err)
 	}
 }

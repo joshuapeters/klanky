@@ -3,131 +3,68 @@ package statuswrite
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-func mockConfig() *config.Config {
-	return &config.Config{
-		SchemaVersion: 1,
-		Repo:          config.ConfigRepo{Owner: "alice", Name: "proj"},
-		Project: config.ConfigProject{
-			URL: "https://github.com/users/alice/projects/1", Number: 1,
-			NodeID: "PVT_x", OwnerLogin: "alice", OwnerType: "User",
-			Fields: config.ConfigFields{
-				Phase: config.ConfigField{ID: "PVTF_p", Name: "Phase"},
-				Status: config.ConfigStatusField{ID: "PVTSSF_s", Name: "Status",
-					Options: map[string]string{
-						"Todo": "a", "In Progress": "b",
-						"In Review": "c", "Needs Attention": "d", "Done": "e",
-					}},
-			},
-		},
-		FeatureLabel: config.ConfigLabel{Name: "klanky:feature"},
+func proj() config.Project {
+	return config.Project{
+		NodeID: "PVT_p",
+		Fields: config.ProjectFields{Status: config.StatusField{
+			ID: "PVTSSF_s", Name: "Status",
+			Options: map[string]string{"Todo": "opt_todo", "Done": "opt_done"},
+		}},
 	}
 }
 
-// retryFakeRunner is a custom fake that fails the first N calls then succeeds.
-type retryFakeRunner struct {
-	failuresLeft int
-	calls        int
-}
-
-func (r *retryFakeRunner) Run(_ context.Context, _ string, _ ...string) ([]byte, error) {
-	r.calls++
-	if r.failuresLeft > 0 {
-		r.failuresLeft--
-		return nil, errors.New("transient error")
-	}
-	return nil, nil
-}
-
-func TestWriteStatus_SuccessOnFirstTry(t *testing.T) {
-	r := &retryFakeRunner{failuresLeft: 0}
-	cfg := mockConfig()
-
-	err := WriteStatus(context.Background(), r, cfg, "ITEM", "Todo", 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.calls != 1 {
-		t.Errorf("calls = %d, want 1", r.calls)
+func TestWrite_Success(t *testing.T) {
+	fake := gh.NewFakeRunner()
+	fake.Stub(
+		[]string{"gh", "api", "graphql",
+			"-f", "query=" + Mutation,
+			"-f", "fid=PVTSSF_s",
+			"-f", "iid=PVTI_x",
+			"-f", "oid=opt_todo",
+			"-f", "pid=PVT_p"},
+		[]byte(`{"data":{"updateProjectV2ItemFieldValue":{"projectV2Item":{"id":"PVTI_x"}}}}`),
+		nil,
+	)
+	if err := Write(context.Background(), fake, proj(), "PVTI_x", "Todo", time.Millisecond); err != nil {
+		t.Fatalf("Write: %v", err)
 	}
 }
 
-func TestWriteStatus_RetriesAndSucceeds(t *testing.T) {
-	r := &retryFakeRunner{failuresLeft: 2}
-	cfg := mockConfig()
-
-	err := WriteStatus(context.Background(), r, cfg, "ITEM", "Todo", time.Millisecond)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.calls != 3 {
-		t.Errorf("calls = %d, want 3", r.calls)
+func TestWrite_UnknownStatus(t *testing.T) {
+	err := Write(context.Background(), gh.NewFakeRunner(), proj(), "PVTI_x", "Bogus", time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "unknown Status") {
+		t.Errorf("expected unknown-status error, got %v", err)
 	}
 }
 
-func TestWriteStatus_GivesUpAfterThreeFailures(t *testing.T) {
-	r := &retryFakeRunner{failuresLeft: 99}
-	cfg := mockConfig()
-
-	err := WriteStatus(context.Background(), r, cfg, "ITEM", "Todo", time.Millisecond)
+func TestWrite_RetriesThenFails(t *testing.T) {
+	fake := gh.NewFakeRunner()
+	args := []string{"gh", "api", "graphql",
+		"-f", "query=" + Mutation,
+		"-f", "fid=PVTSSF_s",
+		"-f", "iid=PVTI_x",
+		"-f", "oid=opt_todo",
+		"-f", "pid=PVT_p"}
+	bad := errors.New("nope")
+	for i := 0; i < 3; i++ {
+		fake.Stub(args, nil, bad)
+	}
+	err := Write(context.Background(), fake, proj(), "PVTI_x", "Todo", time.Millisecond)
 	if err == nil {
-		t.Fatal("expected error after exhausting retries")
+		t.Fatal("expected final error")
 	}
-	if r.calls != 3 {
-		t.Errorf("calls = %d, want 3", r.calls)
+	if !strings.Contains(err.Error(), "after 3 attempts") {
+		t.Errorf("error should mention attempts: %v", err)
 	}
-}
-
-func TestWriteStatus_RejectsUnknownStatus(t *testing.T) {
-	r := &retryFakeRunner{}
-	cfg := mockConfig()
-
-	err := WriteStatus(context.Background(), r, cfg, "ITEM", "Bogus", 0)
-	if err == nil {
-		t.Fatal("expected error for unknown status")
+	if len(fake.Calls) != 3 {
+		t.Errorf("expected 3 calls, got %d", len(fake.Calls))
 	}
-	if r.calls != 0 {
-		t.Errorf("calls = %d, want 0 (should fail before any gh call)", r.calls)
-	}
-}
-
-// Sanity: ensure the status name → option ID lookup uses the config map.
-func TestWriteStatus_PassesCorrectOptionID(t *testing.T) {
-	cfg := mockConfig()
-	want := cfg.Project.Fields.Status.Options["In Review"]
-	if want == "" {
-		t.Fatalf("test setup error: In Review option missing from mock config")
-	}
-
-	var capturedArgs []string
-	captureRunner := captureRunnerFn(func(name string, args ...string) ([]byte, error) {
-		capturedArgs = append([]string{name}, args...)
-		return nil, nil
-	})
-
-	if err := WriteStatus(context.Background(), captureRunner, cfg, "ITEM-X", "In Review", 0); err != nil {
-		t.Fatal(err)
-	}
-
-	joined := fmt.Sprintf("%v", capturedArgs)
-	if !strings.Contains(joined, want) {
-		t.Errorf("expected option ID %q in args; got: %s", want, joined)
-	}
-	if !strings.Contains(joined, "ITEM-X") {
-		t.Errorf("expected ITEM-X in args; got: %s", joined)
-	}
-}
-
-// captureRunnerFn is a one-line Runner implementation for capture tests.
-type captureRunnerFn func(name string, args ...string) ([]byte, error)
-
-func (f captureRunnerFn) Run(_ context.Context, name string, args ...string) ([]byte, error) {
-	return f(name, args...)
 }

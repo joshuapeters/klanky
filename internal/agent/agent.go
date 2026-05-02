@@ -18,7 +18,7 @@ import (
 	"github.com/joshuapeters/klanky/internal/snapshot"
 )
 
-// Outcome enumerates the final state of an agent run for one task.
+// Outcome enumerates the final state of an agent run for one issue.
 type Outcome int
 
 const (
@@ -27,6 +27,7 @@ const (
 	OutcomeNeedsAttention
 )
 
+// String is the human-readable form used in the summary table.
 func (o Outcome) String() string {
 	switch o {
 	case OutcomeInReview:
@@ -38,23 +39,26 @@ func (o Outcome) String() string {
 	}
 }
 
-// AgentJob is the per-task input to RunAgent.
-type AgentJob struct {
-	FeatureID    int
-	Task         snapshot.TaskInfo
+// Job is the per-issue input to RunAgent.
+type Job struct {
+	ProjectSlug  string
+	IssueNumber  int
+	IssueTitle   string
+	IssueBody    string
 	WorktreePath string
 	LogPath      string
 	RepoSlug     string // owner/name
 	Timeout      time.Duration
 }
 
-// TaskResult is the per-task output of RunAgent, consumed by the runner for
-// status writes, summary rendering, and breadcrumb composition.
-type TaskResult struct {
-	TaskNumber    int
+// Result is the per-issue output of RunAgent. Outcome is one of OutcomeInReview
+// or OutcomeNeedsAttention; the runner uses this to decide which Status to
+// write next.
+type Result struct {
+	IssueNumber   int
 	Outcome       Outcome
-	OutcomeReason string // freeform sentence describing why (used in breadcrumb)
-	PR            *snapshot.PRInfo
+	OutcomeReason string // sentence-form explanation; goes into the breadcrumb
+	PR            *snapshot.PR
 	StartedAt     time.Time
 	Duration      time.Duration
 }
@@ -67,17 +71,18 @@ type SpawnOpts struct {
 	Stderr io.Writer
 }
 
-// Spawner abstracts subprocess execution for long-running agents.
-// Implementations are expected to honor ctx cancellation and return
-// (-1, ctx.Err()) on timeout, with the process group SIGKILLed.
+// Spawner abstracts subprocess execution so RunAgent can be tested against a
+// FakeSpawner without invoking real `claude`.
 type Spawner interface {
 	Spawn(ctx context.Context, name string, args []string, opts SpawnOpts) (exitCode int, err error)
 }
 
-// RealSpawner uses exec.CommandContext and sets the process group so the
-// runner can SIGKILL the whole tree on timeout.
+// RealSpawner uses exec.CommandContext with Setpgid so the runner can SIGKILL
+// the whole process group on timeout or Ctrl-C.
 type RealSpawner struct{}
 
+// Spawn runs the agent. ctx cancellation triggers a SIGKILL to the entire
+// process group (so children of children die too).
 func (RealSpawner) Spawn(ctx context.Context, name string, args []string, opts SpawnOpts) (int, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = opts.Cwd
@@ -86,13 +91,11 @@ func (RealSpawner) Spawn(ctx context.Context, name string, args []string, opts S
 	cmd.Stderr = opts.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
-		// Kill the whole process group rather than just the leader.
 		if cmd.Process != nil {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		}
 		return os.ErrProcessDone
 	}
-
 	if err := cmd.Start(); err != nil {
 		return -1, err
 	}
@@ -107,12 +110,12 @@ func (RealSpawner) Spawn(ctx context.Context, name string, args []string, opts S
 	return 0, nil
 }
 
-// RunAgent spawns one agent for one task and verifies its result.
-// Returns a non-error TaskResult for both success (in-review) and failure
-// (needs-attention) outcomes — only setup errors (e.g. claude binary missing,
-// log file un-creatable) are returned as err.
-func RunAgent(ctx context.Context, r gh.Runner, sp Spawner, job AgentJob) (*TaskResult, error) {
-	if err := os.MkdirAll(filepath.Dir(job.LogPath), 0755); err != nil {
+// RunAgent spawns one agent for one issue and verifies its result. Returns a
+// non-error Result for both in-review and needs-attention outcomes; only
+// setup errors (log dir un-creatable, spawn binary missing) are returned as
+// err. The caller writes Status and posts breadcrumbs based on Result.
+func RunAgent(ctx context.Context, r gh.Runner, sp Spawner, job Job) (*Result, error) {
+	if err := os.MkdirAll(filepath.Dir(job.LogPath), 0o755); err != nil {
 		return nil, fmt.Errorf("mkdir log dir: %w", err)
 	}
 	logFile, err := os.Create(job.LogPath)
@@ -122,17 +125,17 @@ func RunAgent(ctx context.Context, r gh.Runner, sp Spawner, job AgentJob) (*Task
 	defer logFile.Close()
 
 	envelope := BuildEnvelope(EnvelopeData{
-		FeatureID:    job.FeatureID,
-		TaskNumber:   job.Task.Number,
-		TaskTitle:    job.Task.Title,
-		TaskBody:     job.Task.Body,
+		IssueNumber:  job.IssueNumber,
+		IssueTitle:   job.IssueTitle,
+		IssueBody:    job.IssueBody,
+		ProjectSlug:  job.ProjectSlug,
 		WorktreePath: job.WorktreePath,
 	})
 
 	args := []string{"-p", envelope, "--permission-mode", "bypassPermissions"}
 	env := append(os.Environ(), "GH_REPO="+job.RepoSlug)
 
-	res := &TaskResult{TaskNumber: job.Task.Number, StartedAt: time.Now()}
+	res := &Result{IssueNumber: job.IssueNumber, StartedAt: time.Now()}
 
 	spawnCtx, cancel := context.WithTimeout(ctx, job.Timeout)
 	defer cancel()
@@ -143,13 +146,9 @@ func RunAgent(ctx context.Context, r gh.Runner, sp Spawner, job AgentJob) (*Task
 	})
 	res.Duration = time.Since(res.StartedAt)
 
-	// A spawn-system error (binary missing, exec failure) is fatal for this task
-	// and should be returned to the runner so it's surfaced rather than silently
-	// becoming needs-attention.
 	if spawnErr != nil && !errors.Is(spawnErr, context.DeadlineExceeded) {
 		return nil, fmt.Errorf("spawn claude: %w", spawnErr)
 	}
-
 	timedOut := errors.Is(spawnErr, context.DeadlineExceeded) || spawnCtx.Err() == context.DeadlineExceeded
 	if timedOut {
 		res.Outcome = OutcomeNeedsAttention
@@ -157,7 +156,6 @@ func RunAgent(ctx context.Context, r gh.Runner, sp Spawner, job AgentJob) (*Task
 		return res, nil
 	}
 
-	// Verify branch has commits beyond main.
 	commitOut, gitErr := r.Run(ctx, "git", "-C", job.WorktreePath, "rev-list", "--count", "main..HEAD")
 	if gitErr != nil {
 		res.Outcome = OutcomeNeedsAttention
@@ -171,8 +169,7 @@ func RunAgent(ctx context.Context, r gh.Runner, sp Spawner, job AgentJob) (*Task
 		return res, nil
 	}
 
-	// Verify open PR exists for the branch.
-	branch := snapshot.BranchForTask(job.FeatureID, job.Task.Number)
+	branch := snapshot.BranchForIssue(job.ProjectSlug, job.IssueNumber)
 	prOut, prErr := r.Run(ctx, "gh", "pr", "list",
 		"--repo", job.RepoSlug,
 		"--head", branch, "--state", "open",
@@ -188,11 +185,11 @@ func RunAgent(ctx context.Context, r gh.Runner, sp Spawner, job AgentJob) (*Task
 	}
 	if err := json.Unmarshal(prOut, &prs); err != nil || len(prs) == 0 {
 		res.Outcome = OutcomeNeedsAttention
-		res.OutcomeReason = fmt.Sprintf("agent exited with code %d but no PR (open) was found on %s", exitCode, branch)
+		res.OutcomeReason = fmt.Sprintf("agent exited with code %d but no open PR was found on %s", exitCode, branch)
 		return res, nil
 	}
 
 	res.Outcome = OutcomeInReview
-	res.PR = &snapshot.PRInfo{Number: prs[0].Number, URL: prs[0].URL, State: "OPEN", HeadRefName: branch}
+	res.PR = &snapshot.PR{Number: prs[0].Number, URL: prs[0].URL, State: "OPEN", HeadRefName: branch}
 	return res, nil
 }

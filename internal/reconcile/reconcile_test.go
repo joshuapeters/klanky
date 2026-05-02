@@ -7,163 +7,134 @@ import (
 	"github.com/joshuapeters/klanky/internal/snapshot"
 )
 
-func ptrInt(n int) *int { return &n }
-
-func TestReconcile_Row1_ClosedIssueGetsDone(t *testing.T) {
-	snap := &snapshot.Snapshot{
-		Feature: snapshot.FeatureInfo{Number: 100},
-		Tasks: []snapshot.TaskInfo{
-			{Number: 101, ItemID: "I1", State: "CLOSED", Status: "In Review", Phase: ptrInt(1)},
-		},
+func snap(slug string, issues []snapshot.Issue, prs map[string]snapshot.PR) *snapshot.Snapshot {
+	if prs == nil {
+		prs = map[string]snapshot.PR{}
 	}
-	got := Reconcile(snap, 100)
-	mustHaveAction(t, got, 101, "Done", "")
+	return &snapshot.Snapshot{ProjectSlug: slug, Issues: issues, PRsByBranch: prs}
 }
 
-func TestReconcile_Row1_ClosedIssueAlreadyDone_NoAction(t *testing.T) {
-	snap := &snapshot.Snapshot{
-		Feature: snapshot.FeatureInfo{Number: 100},
-		Tasks: []snapshot.TaskInfo{
-			{Number: 101, ItemID: "I1", State: "CLOSED", Status: "Done", Phase: ptrInt(1)},
-		},
-	}
-	got := Reconcile(snap, 100)
-	if len(got) != 0 {
-		t.Errorf("expected no actions, got %+v", got)
-	}
+func issue(num int, state, status string) snapshot.Issue {
+	return snapshot.Issue{Number: num, ItemID: "PVTI_" + itoa(num), State: state, Status: status}
 }
 
-func TestReconcile_Row2_OpenTodoNoOp(t *testing.T) {
-	snap := &snapshot.Snapshot{
-		Feature: snapshot.FeatureInfo{Number: 100},
-		Tasks: []snapshot.TaskInfo{
-			{Number: 101, ItemID: "I1", State: "OPEN", Status: "Todo", Phase: ptrInt(1)},
-		},
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
 	}
-	got := Reconcile(snap, 100)
-	if len(got) != 0 {
-		t.Errorf("expected no actions, got %+v", got)
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
 	}
+	return string(buf[i:])
 }
 
-func TestReconcile_Row3_InProgressNoLivePIDGoesNeedsAttention(t *testing.T) {
-	snap := &snapshot.Snapshot{
-		Feature: snapshot.FeatureInfo{Number: 100},
-		Tasks: []snapshot.TaskInfo{
-			{Number: 101, ItemID: "I1", State: "OPEN", Status: "In Progress", Phase: ptrInt(1)},
-		},
-	}
-	got := Reconcile(snap, 100)
-	mustHaveAction(t, got, 101, "Needs Attention", "previous run crashed")
-}
-
-func TestReconcile_Row4_InProgressWithOpenPRGoesInReview(t *testing.T) {
-	snap := &snapshot.Snapshot{
-		Feature: snapshot.FeatureInfo{Number: 100},
-		Tasks: []snapshot.TaskInfo{
-			{Number: 101, ItemID: "I1", State: "OPEN", Status: "In Progress", Phase: ptrInt(1)},
-		},
-		PRsByBranch: map[string]snapshot.PRInfo{
-			"klanky/feat-100/task-101": {Number: 201, State: "OPEN", URL: "u"},
-		},
-	}
-	got := Reconcile(snap, 100)
-	mustHaveAction(t, got, 101, "In Review", "")
-}
-
-func TestReconcile_Row6_InReviewWithOpenPRNoOp(t *testing.T) {
-	snap := &snapshot.Snapshot{
-		Feature: snapshot.FeatureInfo{Number: 100},
-		Tasks: []snapshot.TaskInfo{
-			{Number: 101, ItemID: "I1", State: "OPEN", Status: "In Review", Phase: ptrInt(1)},
-		},
-		PRsByBranch: map[string]snapshot.PRInfo{
-			"klanky/feat-100/task-101": {Number: 201, State: "OPEN"},
-		},
-	}
-	got := Reconcile(snap, 100)
-	if len(got) != 0 {
-		t.Errorf("expected no actions, got %+v", got)
-	}
-}
-
-func TestReconcile_Row7_InReviewWithClosedNotMergedGoesNeedsAttention(t *testing.T) {
-	snap := &snapshot.Snapshot{
-		Feature: snapshot.FeatureInfo{Number: 100},
-		Tasks: []snapshot.TaskInfo{
-			{Number: 101, ItemID: "I1", State: "OPEN", Status: "In Review", Phase: ptrInt(1)},
-		},
-		PRsByBranch: map[string]snapshot.PRInfo{
-			"klanky/feat-100/task-101": {Number: 201, State: "CLOSED"},
-		},
-	}
-	got := Reconcile(snap, 100)
-	mustHaveAction(t, got, 101, "Needs Attention", "PR")
-}
-
-func TestReconcile_Row8_InReviewWithNoPRGoesNeedsAttention(t *testing.T) {
-	snap := &snapshot.Snapshot{
-		Feature: snapshot.FeatureInfo{Number: 100},
-		Tasks: []snapshot.TaskInfo{
-			{Number: 101, ItemID: "I1", State: "OPEN", Status: "In Review", Phase: ptrInt(1)},
-		},
-		PRsByBranch: map[string]snapshot.PRInfo{},
-	}
-	got := Reconcile(snap, 100)
-	mustHaveAction(t, got, 101, "Needs Attention", "")
-}
-
-func TestReconcile_Row9_NeedsAttentionNoOp(t *testing.T) {
-	snap := &snapshot.Snapshot{
-		Feature: snapshot.FeatureInfo{Number: 100},
-		Tasks: []snapshot.TaskInfo{
-			{Number: 101, ItemID: "I1", State: "OPEN", Status: "Needs Attention", Phase: ptrInt(1)},
-		},
-	}
-	got := Reconcile(snap, 100)
-	if len(got) != 0 {
-		t.Errorf("expected no actions, got %+v", got)
-	}
-}
-
-func TestReconcile_Row10_DoneOnOpenIssueIsInvariantViolation(t *testing.T) {
-	snap := &snapshot.Snapshot{
-		Feature: snapshot.FeatureInfo{Number: 100},
-		Tasks: []snapshot.TaskInfo{
-			{Number: 101, ItemID: "I1", State: "OPEN", Status: "Done", Phase: ptrInt(1)},
-		},
-	}
-	got := Reconcile(snap, 100)
-	mustHaveAction(t, got, 101, "Needs Attention", "invariant")
-}
-
-func TestReconcile_Row11_OpenWithMissingPhaseGoesNeedsAttention(t *testing.T) {
-	snap := &snapshot.Snapshot{
-		Feature: snapshot.FeatureInfo{Number: 100},
-		Tasks: []snapshot.TaskInfo{
-			{Number: 101, ItemID: "I1", State: "OPEN", Status: "Todo", Phase: nil},
-		},
-	}
-	got := Reconcile(snap, 100)
-	mustHaveAction(t, got, 101, "Needs Attention", "Phase")
-}
-
-// mustHaveAction asserts there's exactly one action for the given task with
-// the given status, and that the breadcrumb (if non-empty) contains the given
-// substring.
-func mustHaveAction(t *testing.T, actions []Action, taskNumber int, wantStatus, breadcrumbContains string) {
-	t.Helper()
-	for _, a := range actions {
-		if a.TaskNumber != taskNumber {
-			continue
+func find(actions []Action, num int) *Action {
+	for i := range actions {
+		if actions[i].IssueNumber == num {
+			return &actions[i]
 		}
-		if a.NewStatus != wantStatus {
-			t.Errorf("task %d: NewStatus = %q, want %q", taskNumber, a.NewStatus, wantStatus)
-		}
-		if breadcrumbContains != "" && !strings.Contains(a.Breadcrumb, breadcrumbContains) {
-			t.Errorf("task %d: Breadcrumb = %q, want to contain %q", taskNumber, a.Breadcrumb, breadcrumbContains)
-		}
-		return
 	}
-	t.Errorf("no action found for task %d in %+v", taskNumber, actions)
+	return nil
+}
+
+func TestRow1_ClosedIssueGoesToDone(t *testing.T) {
+	got := Reconcile(snap("auth", []snapshot.Issue{
+		issue(1, "CLOSED", "In Progress"),
+		issue(2, "CLOSED", "Done"), // already Done — no action
+		issue(3, "CLOSED", ""),
+	}, nil))
+	if a := find(got, 1); a == nil || a.NewStatus != "Done" {
+		t.Errorf("issue 1 → %+v, want Done", a)
+	}
+	if a := find(got, 2); a != nil {
+		t.Errorf("issue 2 already Done; expected no action, got %+v", a)
+	}
+	if a := find(got, 3); a == nil || a.NewStatus != "Done" {
+		t.Errorf("issue 3 → %+v, want Done", a)
+	}
+}
+
+func TestRow2_TodoIsNoOp(t *testing.T) {
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(1, "OPEN", "Todo")}, nil))
+	if len(got) != 0 {
+		t.Errorf("expected no actions, got %v", got)
+	}
+}
+
+func TestRow3_InProgressWithoutPRGoesToNeedsAttention(t *testing.T) {
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Progress")}, nil))
+	a := find(got, 7)
+	if a == nil || a.NewStatus != "Needs Attention" {
+		t.Fatalf("got %+v, want Needs Attention", a)
+	}
+	if !strings.Contains(a.Breadcrumb, "crashed") {
+		t.Errorf("breadcrumb should mention crash; got %q", a.Breadcrumb)
+	}
+}
+
+func TestRow4_InProgressWithOpenPRGoesToInReview(t *testing.T) {
+	prs := map[string]snapshot.PR{
+		snapshot.BranchForIssue("auth", 7): {Number: 99, State: "OPEN", URL: "x", HeadRefName: snapshot.BranchForIssue("auth", 7)},
+	}
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Progress")}, prs))
+	if a := find(got, 7); a == nil || a.NewStatus != "In Review" {
+		t.Errorf("got %+v, want In Review", a)
+	}
+}
+
+func TestRow6_InReviewWithOpenPRIsNoOp(t *testing.T) {
+	prs := map[string]snapshot.PR{
+		snapshot.BranchForIssue("auth", 7): {Number: 99, State: "OPEN", HeadRefName: snapshot.BranchForIssue("auth", 7)},
+	}
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Review")}, prs))
+	if len(got) != 0 {
+		t.Errorf("expected no actions, got %v", got)
+	}
+}
+
+func TestRow7_InReviewWithClosedPRGoesToNeedsAttention(t *testing.T) {
+	prs := map[string]snapshot.PR{
+		snapshot.BranchForIssue("auth", 7): {Number: 99, State: "CLOSED", HeadRefName: snapshot.BranchForIssue("auth", 7)},
+	}
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Review")}, prs))
+	a := find(got, 7)
+	if a == nil || a.NewStatus != "Needs Attention" {
+		t.Fatalf("got %+v", a)
+	}
+	if !strings.Contains(a.Breadcrumb, "#99") {
+		t.Errorf("breadcrumb should reference PR; got %q", a.Breadcrumb)
+	}
+}
+
+func TestRow8_InReviewWithoutPRGoesToNeedsAttention(t *testing.T) {
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Review")}, nil))
+	a := find(got, 7)
+	if a == nil || a.NewStatus != "Needs Attention" {
+		t.Fatalf("got %+v", a)
+	}
+	if !strings.Contains(a.Breadcrumb, "no PR exists") {
+		t.Errorf("breadcrumb should explain missing PR; got %q", a.Breadcrumb)
+	}
+}
+
+func TestRow9_NeedsAttentionIsNoOp(t *testing.T) {
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "Needs Attention")}, nil))
+	if len(got) != 0 {
+		t.Errorf("expected no actions, got %v", got)
+	}
+}
+
+func TestRow10_OpenIssueWithDoneStatusGoesToNeedsAttention(t *testing.T) {
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "Done")}, nil))
+	a := find(got, 7)
+	if a == nil || a.NewStatus != "Needs Attention" {
+		t.Fatalf("got %+v", a)
+	}
+	if !strings.Contains(a.Breadcrumb, "invariant") {
+		t.Errorf("breadcrumb should mention invariant; got %q", a.Breadcrumb)
+	}
 }
