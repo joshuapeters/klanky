@@ -3,6 +3,8 @@ package config
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -35,14 +37,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if got.SchemaVersion != SchemaVersion {
-		t.Errorf("SchemaVersion = %d, want %d", got.SchemaVersion, SchemaVersion)
-	}
-	if got.Repo.Slug() != "joshuapeters/klanky" {
-		t.Errorf("Repo.Slug() = %q", got.Repo.Slug())
-	}
-	if got.Projects["auth"].Fields.Status.Options["In Review"] != "3" {
-		t.Errorf("status options not round-tripped: %#v", got.Projects["auth"].Fields.Status.Options)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("round-trip mismatch (-want +got):\n%s", diff)
 	}
 }
 

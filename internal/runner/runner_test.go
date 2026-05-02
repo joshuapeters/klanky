@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/joshuapeters/klanky/internal/agent"
 	"github.com/joshuapeters/klanky/internal/config"
 	"github.com/joshuapeters/klanky/internal/gh"
@@ -44,8 +45,9 @@ func TestSelectWork_Eligible(t *testing.T) {
 	if scenario != nil {
 		t.Fatalf("unexpected scenario: %v", scenario)
 	}
-	if len(got) != 2 || got[0].Number != 1 || got[1].Number != 2 {
-		t.Errorf("eligible = %v", got)
+	want := []snapshot.Issue{openIssue(1, "Todo"), openIssue(2, "Needs Attention")}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("eligible (-want +got):\n%s", diff)
 	}
 }
 

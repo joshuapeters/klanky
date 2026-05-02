@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/joshuapeters/klanky/internal/config"
 	"github.com/joshuapeters/klanky/internal/gh"
 )
@@ -71,29 +72,30 @@ func TestFetch_FiltersUntrackedAndExtractsBlockers(t *testing.T) {
 		nil,
 	)
 
-	snap, err := Fetch(context.Background(), fake, cfg, "auth", nil)
+	got, err := Fetch(context.Background(), fake, cfg, "auth", nil)
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	if len(snap.Issues) != 1 || snap.Issues[0].Number != 42 {
-		t.Fatalf("expected 1 tracked issue (#42); got %d", len(snap.Issues))
+
+	want := &Snapshot{
+		ProjectSlug: "auth",
+		Issues: []Issue{{
+			Number: 42, Title: "Login UI", Body: "do the thing",
+			State: "OPEN", ItemID: "PVTI_1", Status: "Todo",
+			BlockedBy: []Blocker{
+				{Number: 7, State: "CLOSED", Repo: "joshuapeters/klanky"},
+				{Number: 9, State: "OPEN", Repo: "someone/else"},
+			},
+		}},
+		PRsByBranch: map[string]PR{
+			BranchForIssue("auth", 42): {
+				Number: 99, URL: "https://x", State: "OPEN",
+				HeadRefName: "klanky/auth/issue-42",
+			},
+		},
 	}
-	got := snap.Issues[0]
-	if got.Title != "Login UI" || got.Status != "Todo" || got.Body != "do the thing" {
-		t.Errorf("got %+v", got)
-	}
-	if len(got.BlockedBy) != 2 {
-		t.Fatalf("blockers = %d, want 2", len(got.BlockedBy))
-	}
-	if got.BlockedBy[0].Number != 7 || got.BlockedBy[0].State != "CLOSED" {
-		t.Errorf("blocker0 = %+v", got.BlockedBy[0])
-	}
-	if got.BlockedBy[1].Repo != "someone/else" {
-		t.Errorf("cross-repo blocker missing repo: %+v", got.BlockedBy[1])
-	}
-	pr, ok := snap.PRsByBranch[BranchForIssue("auth", 42)]
-	if !ok || pr.Number != 99 {
-		t.Errorf("expected PR #99 indexed by branch klanky/auth/issue-42; got %v", snap.PRsByBranch)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("snapshot mismatch (-want +got):\n%s", diff)
 	}
 }
 

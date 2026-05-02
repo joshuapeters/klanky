@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/joshuapeters/klanky/internal/config"
 	"github.com/joshuapeters/klanky/internal/gh"
 )
@@ -157,14 +158,26 @@ func TestRunProjectNew_HappyPath_AtMe(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected slug 'auth' in config, got %v", cfg.Projects)
 	}
-	if p.NodeID != "PVT_new" || p.Number != 12 {
-		t.Errorf("project = %+v", p)
+	want := config.Project{
+		URL:        "https://github.com/users/joshuapeters/projects/12",
+		Number:     12,
+		NodeID:     "PVT_new",
+		Title:      "Auth System",
+		OwnerLogin: "joshuapeters",
+		OwnerType:  "User",
+		Fields: config.ProjectFields{
+			Status: config.StatusField{
+				ID: "PVTSSF_status", Name: "Status",
+				Options: map[string]string{
+					"Todo": "opt_todo", "In Progress": "opt_inp",
+					"In Review": "opt_inr", "Needs Attention": "opt_na",
+					"Done": "opt_done",
+				},
+			},
+		},
 	}
-	if p.OwnerLogin != "joshuapeters" || p.OwnerType != "User" {
-		t.Errorf("owner = (%q,%q)", p.OwnerLogin, p.OwnerType)
-	}
-	if p.Fields.Status.Options["In Review"] != "opt_inr" {
-		t.Errorf("Status options[In Review] = %q", p.Fields.Status.Options["In Review"])
+	if diff := cmp.Diff(want, p); diff != "" {
+		t.Errorf("Project mismatch (-want +got):\n%s", diff)
 	}
 	if !strings.Contains(out.String(), "auth") {
 		t.Errorf("expected slug in confirmation, got %q", out.String())

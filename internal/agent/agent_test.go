@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/joshuapeters/klanky/internal/gh"
+	"github.com/joshuapeters/klanky/internal/snapshot"
 )
 
 // fakeSpawner records the spawn invocation and returns a stubbed exit code/err.
@@ -57,8 +60,16 @@ func TestRunAgent_HappyPath_InReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
-	if res.Outcome != OutcomeInReview || res.PR == nil || res.PR.Number != 99 {
-		t.Errorf("got %+v", res)
+	want := &Result{
+		IssueNumber: 42,
+		Outcome:     OutcomeInReview,
+		PR: &snapshot.PR{
+			Number: 99, URL: "https://x", State: "OPEN",
+			HeadRefName: "klanky/auth/issue-42",
+		},
+	}
+	if diff := cmp.Diff(want, res, cmpopts.IgnoreFields(Result{}, "StartedAt", "Duration")); diff != "" {
+		t.Errorf("Result mismatch (-want +got):\n%s", diff)
 	}
 	if sp.gotName != "claude" {
 		t.Errorf("spawned %q, want claude", sp.gotName)

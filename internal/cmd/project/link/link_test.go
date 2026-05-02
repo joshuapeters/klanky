@@ -7,37 +7,42 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/joshuapeters/klanky/internal/config"
 	"github.com/joshuapeters/klanky/internal/gh"
 )
 
 func TestParseProjectURL(t *testing.T) {
+	type parsed struct {
+		Owner     string
+		Number    int
+		OwnerType string
+	}
 	cases := []struct {
-		in        string
-		owner     string
-		number    int
-		ownerType string
-		wantErr   bool
+		in      string
+		want    parsed
+		wantErr bool
 	}{
-		{"https://github.com/users/joshuapeters/projects/4", "joshuapeters", 4, "User", false},
-		{"https://github.com/orgs/wistia/projects/12/views/3", "wistia", 12, "Organization", false},
-		{"https://github.com/repos/x/y/issues/1", "", 0, "", true},
-		{"https://github.com/orgs/wistia/projects/abc", "", 0, "", true},
-		{"not-a-url", "", 0, "", true},
+		{"https://github.com/users/joshuapeters/projects/4", parsed{"joshuapeters", 4, "User"}, false},
+		{"https://github.com/orgs/wistia/projects/12/views/3", parsed{"wistia", 12, "Organization"}, false},
+		{"https://github.com/repos/x/y/issues/1", parsed{}, true},
+		{"https://github.com/orgs/wistia/projects/abc", parsed{}, true},
+		{"not-a-url", parsed{}, true},
 	}
 	for _, c := range cases {
-		owner, number, ownerType, err := ParseProjectURL(c.in)
-		if (err != nil) != c.wantErr {
-			t.Errorf("ParseProjectURL(%q) err = %v, wantErr %v", c.in, err, c.wantErr)
-			continue
-		}
-		if c.wantErr {
-			continue
-		}
-		if owner != c.owner || number != c.number || ownerType != c.ownerType {
-			t.Errorf("ParseProjectURL(%q) = (%q, %d, %q), want (%q, %d, %q)",
-				c.in, owner, number, ownerType, c.owner, c.number, c.ownerType)
-		}
+		t.Run(c.in, func(t *testing.T) {
+			owner, number, ownerType, err := ParseProjectURL(c.in)
+			if (err != nil) != c.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, c.wantErr)
+			}
+			if c.wantErr {
+				return
+			}
+			got := parsed{Owner: owner, Number: number, OwnerType: ownerType}
+			if diff := cmp.Diff(c.want, got); diff != "" {
+				t.Errorf("ParseProjectURL (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -148,14 +153,26 @@ func TestRunProjectLink_HappyPath(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected slug 'auth-system' in config, got %v", cfg.Projects)
 	}
-	if p.NodeID != "PVT_abc" {
-		t.Errorf("NodeID = %q", p.NodeID)
+	want := config.Project{
+		URL:        "https://github.com/users/joshuapeters/projects/4",
+		Number:     4,
+		NodeID:     "PVT_abc",
+		Title:      "Auth System",
+		OwnerLogin: "joshuapeters",
+		OwnerType:  "User",
+		Fields: config.ProjectFields{
+			Status: config.StatusField{
+				ID: "PVTSSF_status", Name: "Status",
+				Options: map[string]string{
+					"Todo": "opt_todo", "In Progress": "opt_inp",
+					"In Review": "opt_inr", "Needs Attention": "opt_na",
+					"Done": "opt_done",
+				},
+			},
+		},
 	}
-	if p.Title != "Auth System" {
-		t.Errorf("Title = %q", p.Title)
-	}
-	if p.Fields.Status.Options["In Review"] != "opt_inr" {
-		t.Errorf("Status options[In Review] = %q", p.Fields.Status.Options["In Review"])
+	if diff := cmp.Diff(want, p); diff != "" {
+		t.Errorf("Project mismatch (-want +got):\n%s", diff)
 	}
 	if !strings.Contains(out.String(), "auth-system") || !strings.Contains(out.String(), "7") {
 		t.Errorf("expected slug + count in output, got %q", out.String())

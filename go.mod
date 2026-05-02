@@ -3,6 +3,7 @@ module github.com/joshuapeters/klanky
 go 1.26.2
 
 require (
+	github.com/google/go-cmp v0.7.0
 	github.com/spf13/cobra v1.8.1
 	golang.org/x/sync v0.10.0
 )

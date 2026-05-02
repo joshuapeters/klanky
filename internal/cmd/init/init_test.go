@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/joshuapeters/klanky/internal/config"
 	"github.com/joshuapeters/klanky/internal/gh"
 )
@@ -106,22 +107,24 @@ func TestRunInit_AutoDetectFails(t *testing.T) {
 }
 
 func TestParseGitRemote(t *testing.T) {
-	cases := map[string][2]string{
-		"https://github.com/joshuapeters/klanky.git":  {"joshuapeters", "klanky"},
-		"https://github.com/joshuapeters/klanky":      {"joshuapeters", "klanky"},
-		"git@github.com:joshuapeters/klanky.git":      {"joshuapeters", "klanky"},
-		"git@github.com:joshuapeters/klanky":          {"joshuapeters", "klanky"},
-		"ssh://git@github.com/joshuapeters/klanky.git": {"joshuapeters", "klanky"},
-	}
-	for in, want := range cases {
-		o, n, err := parseGitRemote(in)
-		if err != nil {
-			t.Errorf("parseGitRemote(%q) error: %v", in, err)
-			continue
-		}
-		if o != want[0] || n != want[1] {
-			t.Errorf("parseGitRemote(%q) = (%q, %q), want %v", in, o, n, want)
-		}
+	type ownerName struct{ Owner, Name string }
+	want := ownerName{Owner: "joshuapeters", Name: "klanky"}
+	for _, in := range []string{
+		"https://github.com/joshuapeters/klanky.git",
+		"https://github.com/joshuapeters/klanky",
+		"git@github.com:joshuapeters/klanky.git",
+		"git@github.com:joshuapeters/klanky",
+		"ssh://git@github.com/joshuapeters/klanky.git",
+	} {
+		t.Run(in, func(t *testing.T) {
+			o, n, err := parseGitRemote(in)
+			if err != nil {
+				t.Fatalf("parseGitRemote: %v", err)
+			}
+			if diff := cmp.Diff(want, ownerName{Owner: o, Name: n}); diff != "" {
+				t.Errorf("parseGitRemote (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

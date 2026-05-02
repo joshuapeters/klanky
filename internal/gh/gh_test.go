@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestFakeRunner_RecordsCallAndReturnsStubbedOutput(t *testing.T) {
@@ -68,11 +70,11 @@ func TestRunGraphQL_ParsesDataIntoTarget(t *testing.T) {
 	if err := RunGraphQL(context.Background(), fake, "QUERY", nil, &got); err != nil {
 		t.Fatalf("RunGraphQL: %v", err)
 	}
-	if got.Repository.Issue.Number != 117 {
-		t.Errorf("number = %d, want 117", got.Repository.Issue.Number)
-	}
-	if got.Repository.Issue.Title != "hi" {
-		t.Errorf("title = %q, want hi", got.Repository.Issue.Title)
+	var want result
+	want.Repository.Issue.Number = 117
+	want.Repository.Issue.Title = "hi"
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("RunGraphQL result (-want +got):\n%s", diff)
 	}
 }
 
