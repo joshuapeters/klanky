@@ -1,4 +1,4 @@
-package main
+package agent
 
 import (
 	"context"
@@ -13,6 +13,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/joshuapeters/klanky/internal/gh"
+	"github.com/joshuapeters/klanky/internal/snapshot"
 )
 
 // Outcome enumerates the final state of an agent run for one task.
@@ -38,7 +41,7 @@ func (o Outcome) String() string {
 // AgentJob is the per-task input to RunAgent.
 type AgentJob struct {
 	FeatureID    int
-	Task         TaskInfo
+	Task         snapshot.TaskInfo
 	WorktreePath string
 	LogPath      string
 	RepoSlug     string // owner/name
@@ -51,7 +54,7 @@ type TaskResult struct {
 	TaskNumber    int
 	Outcome       Outcome
 	OutcomeReason string // freeform sentence describing why (used in breadcrumb)
-	PR            *PRInfo
+	PR            *snapshot.PRInfo
 	StartedAt     time.Time
 	Duration      time.Duration
 }
@@ -108,7 +111,7 @@ func (RealSpawner) Spawn(ctx context.Context, name string, args []string, opts S
 // Returns a non-error TaskResult for both success (in-review) and failure
 // (needs-attention) outcomes — only setup errors (e.g. claude binary missing,
 // log file un-creatable) are returned as err.
-func RunAgent(ctx context.Context, r Runner, sp Spawner, job AgentJob) (*TaskResult, error) {
+func RunAgent(ctx context.Context, r gh.Runner, sp Spawner, job AgentJob) (*TaskResult, error) {
 	if err := os.MkdirAll(filepath.Dir(job.LogPath), 0755); err != nil {
 		return nil, fmt.Errorf("mkdir log dir: %w", err)
 	}
@@ -169,7 +172,7 @@ func RunAgent(ctx context.Context, r Runner, sp Spawner, job AgentJob) (*TaskRes
 	}
 
 	// Verify open PR exists for the branch.
-	branch := BranchForTask(job.FeatureID, job.Task.Number)
+	branch := snapshot.BranchForTask(job.FeatureID, job.Task.Number)
 	prOut, prErr := r.Run(ctx, "gh", "pr", "list",
 		"--repo", job.RepoSlug,
 		"--head", branch, "--state", "open",
@@ -190,6 +193,6 @@ func RunAgent(ctx context.Context, r Runner, sp Spawner, job AgentJob) (*TaskRes
 	}
 
 	res.Outcome = OutcomeInReview
-	res.PR = &PRInfo{Number: prs[0].Number, URL: prs[0].URL, State: "OPEN", HeadRefName: branch}
+	res.PR = &snapshot.PRInfo{Number: prs[0].Number, URL: prs[0].URL, State: "OPEN", HeadRefName: branch}
 	return res, nil
 }

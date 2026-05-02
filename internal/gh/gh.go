@@ -1,4 +1,4 @@
-package main
+package gh
 
 import (
 	"bytes"
@@ -7,8 +7,32 @@ import (
 	"fmt"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 )
+
+// LastIssueNumberFromURL extracts the trailing /issues/<n> number from a URL.
+// Returns 0 if no such pattern is found.
+func LastIssueNumberFromURL(s string) int {
+	const marker = "/issues/"
+	i := strings.LastIndex(s, marker)
+	if i == -1 {
+		return 0
+	}
+	rest := s[i+len(marker):]
+	end := 0
+	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return 0
+	}
+	n, err := strconv.Atoi(rest[:end])
+	if err != nil {
+		return 0
+	}
+	return n
+}
 
 // Runner abstracts subprocess execution so commands can be unit-tested
 // against a FakeRunner without invoking real shell commands.

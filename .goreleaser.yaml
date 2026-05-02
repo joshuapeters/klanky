@@ -7,7 +7,7 @@ before:
 
 builds:
   - id: klanky
-    main: .
+    main: ./cmd/klanky
     binary: klanky
     env:
       - CGO_ENABLED=0

@@ -1,10 +1,12 @@
-package main
+package agent
 
 import (
 	"context"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
 func TestBuildBreadcrumb_ContainsAllRequiredSections(t *testing.T) {
@@ -37,7 +39,7 @@ func TestBuildBreadcrumb_ContainsAllRequiredSections(t *testing.T) {
 }
 
 func TestCountPriorAttempts_ZeroComments(t *testing.T) {
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	r.Stub([]string{"gh", "issue", "view", "42", "--repo", "alice/proj", "--json", "comments"},
 		[]byte(`{"comments":[]}`), nil)
 
@@ -51,7 +53,7 @@ func TestCountPriorAttempts_ZeroComments(t *testing.T) {
 }
 
 func TestCountPriorAttempts_OnlyKlankySentinelCommentsCount(t *testing.T) {
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	r.Stub([]string{"gh", "issue", "view", "42", "--repo", "alice/proj", "--json", "comments"},
 		[]byte(`{"comments":[
 			{"body":"<!-- klanky-attempt -->\n**Klanky attempt #1...**"},
@@ -69,7 +71,7 @@ func TestCountPriorAttempts_OnlyKlankySentinelCommentsCount(t *testing.T) {
 }
 
 func TestPostBreadcrumb_CallsGhIssueComment(t *testing.T) {
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	r.Stub([]string{"gh", "issue", "comment", "42", "--repo", "alice/proj", "--body", "hello"}, nil, nil)
 
 	if err := PostBreadcrumb(context.Background(), r, "alice/proj", 42, "hello"); err != nil {

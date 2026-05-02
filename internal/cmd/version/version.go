@@ -1,4 +1,4 @@
-package main
+package version
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newVersionCmd(v, c, d string) *cobra.Command {
+func NewCmdVersion(v, c, d string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print the build version, commit, and date",

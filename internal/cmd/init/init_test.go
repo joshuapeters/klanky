@@ -1,17 +1,20 @@
-package main
+package initcmd
 
 import (
 	"bytes"
 	"context"
 	"path/filepath"
 	"testing"
+
+	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
 func TestInit_FullSequence(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".klankyrc.json")
 
-	fake := NewFakeRunner()
+	fake := gh.NewFakeRunner()
 
 	// 1. Create project.
 	fake.Stub(
@@ -66,7 +69,7 @@ func TestInit_FullSequence(t *testing.T) {
 	)
 
 	out := &bytes.Buffer{}
-	err := RunInit(context.Background(), fake, InitOptions{
+	err := RunInit(context.Background(), fake, Options{
 		Owner:      "@me",
 		Title:      "Klanky",
 		RepoSlug:   "joshuapeters/klanky",
@@ -76,7 +79,7 @@ func TestInit_FullSequence(t *testing.T) {
 		t.Fatalf("RunInit: %v", err)
 	}
 
-	cfg, err := LoadConfig(cfgPath)
+	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
 		t.Fatalf("config not written: %v", err)
 	}

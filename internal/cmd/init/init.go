@@ -1,4 +1,4 @@
-package main
+package initcmd
 
 import (
 	"context"
@@ -9,9 +9,12 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-type InitOptions struct {
+type Options struct {
 	Owner       string
 	Title       string
 	Description string
@@ -33,15 +36,10 @@ var statusColors = map[string]string{
 // to klanky's required 5-option set. Existing option IDs (passed via
 // `existing`) are preserved so already-assigned items keep their status;
 // missing options are created.
-//
-// Options are inlined into the mutation rather than passed as a variable
-// because GraphQL variables for nested input lists are awkward to express
-// via `gh api graphql -F`. Keeping the full string as the query is simpler
-// and lets tests assert exact stub equality.
 func buildUpdateStatusOptionsMutation(existing map[string]string) string {
 	var b strings.Builder
 	b.WriteString(`mutation($fieldId: ID!) { updateProjectV2Field(input: {fieldId: $fieldId, singleSelectOptions: [`)
-	for i, name := range StatusOptions {
+	for i, name := range config.StatusOptions {
 		if i > 0 {
 			b.WriteString(",")
 		}
@@ -56,14 +54,14 @@ func buildUpdateStatusOptionsMutation(existing map[string]string) string {
 	return b.String()
 }
 
-func newInitCmd(cfgPath string) *cobra.Command {
-	var opts InitOptions
+func NewCmdInit(cfgPath string) *cobra.Command {
+	var opts Options
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Bootstrap a new project for this repo (creates project, fields, label)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			opts.ConfigPath = cfgPath
-			return RunInit(cmd.Context(), RealRunner{}, opts, cmd.OutOrStdout())
+			return RunInit(cmd.Context(), gh.RealRunner{}, opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&opts.Owner, "owner", "@me",
@@ -75,7 +73,7 @@ func newInitCmd(cfgPath string) *cobra.Command {
 	return cmd
 }
 
-func RunInit(ctx context.Context, r Runner, opts InitOptions, out io.Writer) error {
+func RunInit(ctx context.Context, r gh.Runner, opts Options, out io.Writer) error {
 	if opts.RepoSlug == "" {
 		return fmt.Errorf("--repo owner/name is required")
 	}
@@ -105,14 +103,14 @@ func RunInit(ctx context.Context, r Runner, opts InitOptions, out io.Writer) err
 	// 2. Create Phase field.
 	phaseOut, err := r.Run(ctx, "gh", "project", "field-create", strconv.Itoa(created.Number),
 		"--owner", opts.Owner,
-		"--name", FieldNamePhase,
+		"--name", config.FieldNamePhase,
 		"--data-type", "NUMBER",
 		"--format", "json",
 	)
 	if err != nil {
 		return fmt.Errorf("gh project field-create Phase: %w", err)
 	}
-	var phaseField ConfigField
+	var phaseField config.ConfigField
 	if err := json.Unmarshal(phaseOut, &phaseField); err != nil {
 		return fmt.Errorf("parse Phase field-create: %w", err)
 	}
@@ -123,11 +121,11 @@ func RunInit(ctx context.Context, r Runner, opts InitOptions, out io.Writer) err
 	if err != nil {
 		return fmt.Errorf("gh project field-list: %w", err)
 	}
-	var fl ProjectFields
+	var fl config.ProjectFields
 	if err := json.Unmarshal(flOut, &fl); err != nil {
 		return fmt.Errorf("parse field-list: %w", err)
 	}
-	status := findField(fl.Fields, FieldNameStatus)
+	status := config.FindField(fl.Fields, config.FieldNameStatus)
 	if status == nil {
 		return fmt.Errorf("Projects v2 didn't create the default Status field — re-run init or contact GitHub support")
 	}
@@ -142,12 +140,12 @@ func RunInit(ctx context.Context, r Runner, opts InitOptions, out io.Writer) err
 	var updateResult struct {
 		UpdateProjectV2Field struct {
 			ProjectV2Field struct {
-				ID      string               `json:"id"`
-				Options []ProjectFieldOption `json:"options"`
+				ID      string                      `json:"id"`
+				Options []config.ProjectFieldOption `json:"options"`
 			} `json:"projectV2Field"`
 		} `json:"updateProjectV2Field"`
 	}
-	if err := RunGraphQL(ctx, r, mutation,
+	if err := gh.RunGraphQL(ctx, r, mutation,
 		map[string]any{"fieldId": status.ID},
 		&updateResult,
 	); err != nil {
@@ -155,7 +153,7 @@ func RunInit(ctx context.Context, r Runner, opts InitOptions, out io.Writer) err
 	}
 
 	// 5. Create the label on the repo.
-	if _, err := r.Run(ctx, "gh", "label", "create", LabelFeatureName,
+	if _, err := r.Run(ctx, "gh", "label", "create", config.LabelFeatureName,
 		"--repo", opts.RepoSlug,
 		"--description", "Marks an issue as a Klanky feature (parent of task sub-issues)",
 		"--color", "0E8A16",
@@ -174,23 +172,23 @@ func RunInit(ctx context.Context, r Runner, opts InitOptions, out io.Writer) err
 	if len(repoParts) != 2 {
 		return fmt.Errorf("--repo must be owner/name")
 	}
-	cfg := &Config{
-		SchemaVersion: SchemaVersion,
-		Repo:          ConfigRepo{Owner: repoParts[0], Name: repoParts[1]},
-		Project: ConfigProject{
+	cfg := &config.Config{
+		SchemaVersion: config.SchemaVersion,
+		Repo:          config.ConfigRepo{Owner: repoParts[0], Name: repoParts[1]},
+		Project: config.ConfigProject{
 			URL:        created.URL,
 			Number:     created.Number,
 			NodeID:     created.ID,
 			OwnerLogin: created.Owner.Login,
 			OwnerType:  created.Owner.Type,
-			Fields: ConfigFields{
-				Phase:  ConfigField{ID: phaseField.ID, Name: phaseField.Name},
-				Status: ConfigStatusField{ID: status.ID, Name: FieldNameStatus, Options: options},
+			Fields: config.ConfigFields{
+				Phase:  config.ConfigField{ID: phaseField.ID, Name: phaseField.Name},
+				Status: config.ConfigStatusField{ID: status.ID, Name: config.FieldNameStatus, Options: options},
 			},
 		},
-		FeatureLabel: ConfigLabel{Name: LabelFeatureName},
+		FeatureLabel: config.ConfigLabel{Name: config.LabelFeatureName},
 	}
-	if err := SaveConfig(opts.ConfigPath, cfg); err != nil {
+	if err := config.SaveConfig(opts.ConfigPath, cfg); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Wrote %s\nProject: %s\n", opts.ConfigPath, created.URL)

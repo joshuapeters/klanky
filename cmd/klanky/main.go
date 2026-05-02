@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/spf13/cobra"
+	"github.com/joshuapeters/klanky/internal/cmd/root"
 )
 
 const defaultConfigPath = ".klankyrc.json"
@@ -22,30 +22,6 @@ var (
 	date    = "unknown"
 )
 
-func newRootCmd() *cobra.Command {
-	root := &cobra.Command{
-		Use:          "klanky",
-		Short:        "Orchestrate parallel coding agents against a GitHub-issue task graph",
-		Long:         fmt.Sprintf("Orchestrate parallel coding agents against a GitHub-issue task graph.\n\nVersion: %s (%s) built %s", version, commit, date),
-		Version:      version,
-		SilenceUsage: true,
-	}
-
-	cfgPath := defaultConfigPath
-	if abs, err := filepath.Abs(defaultConfigPath); err == nil {
-		cfgPath = abs
-	}
-
-	root.AddCommand(newInitCmd(cfgPath))
-	root.AddCommand(newProjectCmd(cfgPath))
-	root.AddCommand(newFeatureCmd(cfgPath))
-	root.AddCommand(newTaskCmd(cfgPath))
-	root.AddCommand(newRunCmd(cfgPath))
-	root.AddCommand(newVersionCmd(version, commit, date))
-
-	return root
-}
-
 func main() {
 	// Signal-aware context so Ctrl-C cancels the runner cleanly: errgroup
 	// cancellation propagates into RealSpawner.Cancel which SIGKILLs the
@@ -54,7 +30,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	err := newRootCmd().ExecuteContext(ctx)
+	cfgPath := defaultConfigPath
+	if abs, err := filepath.Abs(defaultConfigPath); err == nil {
+		cfgPath = abs
+	}
+
+	err := root.NewCmdRoot(cfgPath, version, commit, date).ExecuteContext(ctx)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		if errors.Is(ctx.Err(), context.Canceled) {

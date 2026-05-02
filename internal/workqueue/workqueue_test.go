@@ -1,12 +1,16 @@
-package main
+package workqueue
 
 import (
 	"testing"
+
+	"github.com/joshuapeters/klanky/internal/snapshot"
 )
 
+func ptrInt(n int) *int { return &n }
+
 func TestSelectWork_PicksLowestOpenPhase(t *testing.T) {
-	snap := &Snapshot{
-		Tasks: []TaskInfo{
+	snap := &snapshot.Snapshot{
+		Tasks: []snapshot.TaskInfo{
 			{Number: 1, State: "CLOSED", Status: "Done", Phase: ptrInt(1)},
 			{Number: 2, State: "OPEN", Status: "Todo", Phase: ptrInt(2)},
 			{Number: 3, State: "OPEN", Status: "Todo", Phase: ptrInt(3)},
@@ -25,8 +29,8 @@ func TestSelectWork_PicksLowestOpenPhase(t *testing.T) {
 }
 
 func TestSelectWork_AllClosed_AllDone(t *testing.T) {
-	snap := &Snapshot{
-		Tasks: []TaskInfo{
+	snap := &snapshot.Snapshot{
+		Tasks: []snapshot.TaskInfo{
 			{Number: 1, State: "CLOSED", Status: "Done", Phase: ptrInt(1)},
 			{Number: 2, State: "CLOSED", Status: "Done", Phase: ptrInt(2)},
 		},
@@ -38,12 +42,12 @@ func TestSelectWork_AllClosed_AllDone(t *testing.T) {
 }
 
 func TestSelectWork_OnlyInReviewInPhase(t *testing.T) {
-	snap := &Snapshot{
-		Tasks: []TaskInfo{
+	snap := &snapshot.Snapshot{
+		Tasks: []snapshot.TaskInfo{
 			{Number: 1, State: "OPEN", Status: "In Review", Phase: ptrInt(1)},
 			{Number: 2, State: "OPEN", Status: "In Review", Phase: ptrInt(1)},
 		},
-		PRsByBranch: map[string]PRInfo{
+		PRsByBranch: map[string]snapshot.PRInfo{
 			"klanky/feat-7/task-1": {Number: 11, URL: "u1", State: "OPEN"},
 			"klanky/feat-7/task-2": {Number: 12, URL: "u2", State: "OPEN"},
 		},
@@ -64,8 +68,8 @@ func TestSelectWork_OnlyInReviewInPhase(t *testing.T) {
 }
 
 func TestSelectWork_IncludesNeedsAttentionInEligible(t *testing.T) {
-	snap := &Snapshot{
-		Tasks: []TaskInfo{
+	snap := &snapshot.Snapshot{
+		Tasks: []snapshot.TaskInfo{
 			{Number: 1, State: "OPEN", Status: "Todo", Phase: ptrInt(1)},
 			{Number: 2, State: "OPEN", Status: "Needs Attention", Phase: ptrInt(1)},
 		},
@@ -77,9 +81,8 @@ func TestSelectWork_IncludesNeedsAttentionInEligible(t *testing.T) {
 }
 
 func TestSelectWork_FlagsSurvivingInProgress(t *testing.T) {
-	snap := &Snapshot{
-		Tasks: []TaskInfo{
-			// In Progress that survived reconcile = bug. Caller surfaces as scenario C.
+	snap := &snapshot.Snapshot{
+		Tasks: []snapshot.TaskInfo{
 			{Number: 1, State: "OPEN", Status: "In Progress", Phase: ptrInt(1)},
 		},
 	}
@@ -90,7 +93,7 @@ func TestSelectWork_FlagsSurvivingInProgress(t *testing.T) {
 }
 
 func TestSelectWork_NoTasks_AllDone(t *testing.T) {
-	snap := &Snapshot{Tasks: []TaskInfo{}}
+	snap := &snapshot.Snapshot{Tasks: []snapshot.TaskInfo{}}
 	got := SelectWork(snap)
 	if !got.AllDone {
 		t.Error("AllDone should be true when no tasks exist")

@@ -1,4 +1,4 @@
-package main
+package agent
 
 import (
 	"context"
@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/joshuapeters/klanky/internal/gh"
+	"github.com/joshuapeters/klanky/internal/snapshot"
 )
 
 // FakeSpawner records the subprocess invocations and returns scripted exit codes.
@@ -51,7 +54,7 @@ func TestRunAgent_HappyPath_ReturnsInReview(t *testing.T) {
 	sp := &FakeSpawner{}
 	sp.Stub(0, "did stuff\n", "", nil)
 
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	// Branch verification: at least one commit beyond main.
 	r.Stub([]string{"git", "-C", "/wt", "rev-list", "--count", "main..HEAD"}, []byte("2\n"), nil)
 	// PR verification.
@@ -62,7 +65,7 @@ func TestRunAgent_HappyPath_ReturnsInReview(t *testing.T) {
 
 	res, err := RunAgent(context.Background(), r, sp, AgentJob{
 		FeatureID:    7,
-		Task:         TaskInfo{Number: 42, Title: "T", Body: "..."},
+		Task:         snapshot.TaskInfo{Number: 42, Title: "T", Body: "..."},
 		WorktreePath: "/wt",
 		LogPath:      logPath,
 		RepoSlug:     "alice/proj",
@@ -123,11 +126,11 @@ func TestRunAgent_NoCommits_ReturnsNeedsAttention(t *testing.T) {
 	sp := &FakeSpawner{}
 	sp.Stub(0, "", "", nil)
 
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	r.Stub([]string{"git", "-C", "/wt", "rev-list", "--count", "main..HEAD"}, []byte("0\n"), nil)
 
 	res, err := RunAgent(context.Background(), r, sp, AgentJob{
-		FeatureID: 7, Task: TaskInfo{Number: 42}, WorktreePath: "/wt",
+		FeatureID: 7, Task: snapshot.TaskInfo{Number: 42}, WorktreePath: "/wt",
 		LogPath: filepath.Join(dir, "log"), RepoSlug: "alice/proj",
 		Timeout: time.Minute,
 	})
@@ -147,7 +150,7 @@ func TestRunAgent_NoPR_ReturnsNeedsAttention(t *testing.T) {
 	sp := &FakeSpawner{}
 	sp.Stub(0, "", "", nil)
 
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	r.Stub([]string{"git", "-C", "/wt", "rev-list", "--count", "main..HEAD"}, []byte("3\n"), nil)
 	r.Stub([]string{"gh", "pr", "list", "--repo", "alice/proj",
 		"--head", "klanky/feat-7/task-42", "--state", "open",
@@ -155,7 +158,7 @@ func TestRunAgent_NoPR_ReturnsNeedsAttention(t *testing.T) {
 		[]byte(`[]`), nil)
 
 	res, err := RunAgent(context.Background(), r, sp, AgentJob{
-		FeatureID: 7, Task: TaskInfo{Number: 42}, WorktreePath: "/wt",
+		FeatureID: 7, Task: snapshot.TaskInfo{Number: 42}, WorktreePath: "/wt",
 		LogPath: filepath.Join(dir, "log"), RepoSlug: "alice/proj",
 		Timeout: time.Minute,
 	})
@@ -175,10 +178,10 @@ func TestRunAgent_TimeoutKilled_ReturnsNeedsAttention(t *testing.T) {
 	sp := &FakeSpawner{}
 	sp.Stub(-1, "", "", context.DeadlineExceeded)
 
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 
 	res, err := RunAgent(context.Background(), r, sp, AgentJob{
-		FeatureID: 7, Task: TaskInfo{Number: 42}, WorktreePath: "/wt",
+		FeatureID: 7, Task: snapshot.TaskInfo{Number: 42}, WorktreePath: "/wt",
 		LogPath: filepath.Join(dir, "log"), RepoSlug: "alice/proj",
 		Timeout: time.Millisecond,
 	})
@@ -198,8 +201,8 @@ func TestRunAgent_SpawnError_PropagatesAsError(t *testing.T) {
 	sp := &FakeSpawner{}
 	sp.Stub(-1, "", "", errors.New("exec: \"claude\": executable file not found in $PATH"))
 
-	res, err := RunAgent(context.Background(), NewFakeRunner(), sp, AgentJob{
-		FeatureID: 7, Task: TaskInfo{Number: 42}, WorktreePath: "/wt",
+	res, err := RunAgent(context.Background(), gh.NewFakeRunner(), sp, AgentJob{
+		FeatureID: 7, Task: snapshot.TaskInfo{Number: 42}, WorktreePath: "/wt",
 		LogPath: filepath.Join(dir, "log"), RepoSlug: "alice/proj",
 		Timeout: time.Minute,
 	})
@@ -218,11 +221,11 @@ func TestRunAgent_LogFile_CreatedEvenOnEarlyExit(t *testing.T) {
 	sp := &FakeSpawner{}
 	sp.Stub(0, "", "", nil)
 
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	r.Stub([]string{"git", "-C", "/wt", "rev-list", "--count", "main..HEAD"}, []byte("0\n"), nil)
 
 	_, err := RunAgent(context.Background(), r, sp, AgentJob{
-		FeatureID: 7, Task: TaskInfo{Number: 42}, WorktreePath: "/wt",
+		FeatureID: 7, Task: snapshot.TaskInfo{Number: 42}, WorktreePath: "/wt",
 		LogPath: logPath, RepoSlug: "alice/proj",
 		Timeout: time.Minute,
 	})

@@ -1,9 +1,15 @@
-package main
+package reconcile
 
-// ReconcileAction describes a single status mutation (and optional breadcrumb)
-// the runner should apply during the reconcile phase. NewStatus is the literal
+import (
+	"strconv"
+
+	"github.com/joshuapeters/klanky/internal/snapshot"
+)
+
+// Action describes a single status mutation (and optional breadcrumb) the
+// runner should apply during the reconcile phase. NewStatus is the literal
 // Status option name (e.g. "Done", "Needs Attention").
-type ReconcileAction struct {
+type Action struct {
 	TaskNumber int
 	ItemID     string
 	NewStatus  string
@@ -14,13 +20,13 @@ type ReconcileAction struct {
 // to bring the runner-maintained Status mirror in sync with underlying truth
 // (issue state + PR state). Implements the 11-row matrix from
 // project_runner_design.md.
-func Reconcile(snap *Snapshot, featureID int) []ReconcileAction {
-	var actions []ReconcileAction
+func Reconcile(snap *snapshot.Snapshot, featureID int) []Action {
+	var actions []Action
 	for _, task := range snap.Tasks {
 		// Row 11: missing Phase value — flag and skip further reconcile for this task.
 		if task.Phase == nil {
 			if task.Status != "Needs Attention" {
-				actions = append(actions, ReconcileAction{
+				actions = append(actions, Action{
 					TaskNumber: task.Number, ItemID: task.ItemID,
 					NewStatus:  "Needs Attention",
 					Breadcrumb: "Task has no Phase value; set one in the project to re-arm.",
@@ -32,7 +38,7 @@ func Reconcile(snap *Snapshot, featureID int) []ReconcileAction {
 		// Row 1: closed issue → Done.
 		if task.State == "CLOSED" {
 			if task.Status != "Done" {
-				actions = append(actions, ReconcileAction{
+				actions = append(actions, Action{
 					TaskNumber: task.Number, ItemID: task.ItemID,
 					NewStatus: "Done",
 				})
@@ -40,7 +46,7 @@ func Reconcile(snap *Snapshot, featureID int) []ReconcileAction {
 			continue
 		}
 
-		branch := BranchForTask(featureID, task.Number)
+		branch := snapshot.BranchForTask(featureID, task.Number)
 		pr, hasPR := snap.PRsByBranch[branch]
 
 		switch task.Status {
@@ -49,14 +55,14 @@ func Reconcile(snap *Snapshot, featureID int) []ReconcileAction {
 		case "In Progress":
 			if hasPR && pr.State == "OPEN" {
 				// Row 4: agent landed PR but status flip didn't take.
-				actions = append(actions, ReconcileAction{
+				actions = append(actions, Action{
 					TaskNumber: task.Number, ItemID: task.ItemID,
 					NewStatus: "In Review",
 				})
 			} else {
 				// Row 3: crashed mid-task (lock takeover already cleared the process,
 				// so any surviving In Progress is by definition stale).
-				actions = append(actions, ReconcileAction{
+				actions = append(actions, Action{
 					TaskNumber: task.Number, ItemID: task.ItemID,
 					NewStatus:  "Needs Attention",
 					Breadcrumb: "previous run crashed mid-task before opening a PR; worktree preserved if it existed.",
@@ -65,17 +71,17 @@ func Reconcile(snap *Snapshot, featureID int) []ReconcileAction {
 		case "In Review":
 			if !hasPR {
 				// Row 8: status was set but PR is gone.
-				actions = append(actions, ReconcileAction{
+				actions = append(actions, Action{
 					TaskNumber: task.Number, ItemID: task.ItemID,
 					NewStatus:  "Needs Attention",
 					Breadcrumb: "Status was In Review but no PR exists on the expected branch; was the PR deleted or the branch force-pushed?",
 				})
 			} else if pr.State != "OPEN" {
 				// Row 7: PR closed without merge.
-				actions = append(actions, ReconcileAction{
+				actions = append(actions, Action{
 					TaskNumber: task.Number, ItemID: task.ItemID,
 					NewStatus:  "Needs Attention",
-					Breadcrumb: "PR #" + itoa(pr.Number) + " was closed without merging; review feedback may be in the PR thread.",
+					Breadcrumb: "PR #" + strconv.Itoa(pr.Number) + " was closed without merging; review feedback may be in the PR thread.",
 				})
 			}
 			// Row 6: open PR, leave alone.
@@ -83,7 +89,7 @@ func Reconcile(snap *Snapshot, featureID int) []ReconcileAction {
 			// Row 9: eligible for work via the work queue; reconcile no-op.
 		case "Done":
 			// Row 10: invariant violation (Done implies closed).
-			actions = append(actions, ReconcileAction{
+			actions = append(actions, Action{
 				TaskNumber: task.Number, ItemID: task.ItemID,
 				NewStatus:  "Needs Attention",
 				Breadcrumb: "invariant violation: Status was Done but issue is open; was the issue manually re-opened?",

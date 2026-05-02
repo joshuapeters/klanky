@@ -1,16 +1,18 @@
-package main
+package worktree
 
 import (
 	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
 func TestEnsureCleanWorktree_FreshCreate(t *testing.T) {
 	wtRoot := t.TempDir()
 	wtPath := filepath.Join(wtRoot, "feat-7", "task-42")
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	r.Stub([]string{"git", "-C", "/repo", "worktree", "prune"}, nil, nil)
 	r.Stub([]string{"git", "-C", "/repo", "worktree", "add", wtPath, "-b", "klanky/feat-7/task-42", "main"}, nil, nil)
 
@@ -29,7 +31,7 @@ func TestEnsureCleanWorktree_WipesExistingPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	r.Stub([]string{"git", "-C", "/repo", "worktree", "prune"}, nil, nil)
 	r.Stub([]string{"git", "-C", "/repo", "worktree", "add", wtPath, "-b", "klanky/feat-7/task-42", "main"}, nil, nil)
 
@@ -44,7 +46,7 @@ func TestEnsureCleanWorktree_WipesExistingPath(t *testing.T) {
 }
 
 func TestRemoveWorktree_CallsGitWorktreeRemove(t *testing.T) {
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	r.Stub([]string{"git", "-C", "/repo", "worktree", "remove", "/some/path", "--force"}, nil, nil)
 
 	if err := RemoveWorktree(context.Background(), r, "/repo", "/some/path"); err != nil {

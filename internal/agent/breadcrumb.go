@@ -1,23 +1,33 @@
-package main
+package agent
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-// klankyAttemptSentinel marks a comment posted by the runner as the breadcrumb
-// from one *agent attempt* (success-or-fail). CountPriorAttempts uses it to
-// derive the attempt counter shown in the summary.
-const klankyAttemptSentinel = "<!-- klanky-attempt -->"
+// AttemptSentinel marks a comment posted by the runner as the breadcrumb from
+// one *agent attempt* (success-or-fail). CountPriorAttempts uses it to derive
+// the attempt counter shown in the summary.
+const AttemptSentinel = "<!-- klanky-attempt -->"
 
-// klankyReconcileSentinel marks a comment posted by the reconcile pass — e.g.
-// "PR was closed without merging" or "Status was Done but issue is open."
-// Distinct from the attempt sentinel so reconcile breadcrumbs don't inflate
-// the agent-attempt count.
-const klankyReconcileSentinel = "<!-- klanky-reconcile -->"
+// ReconcileSentinel marks a comment posted by the reconcile pass — e.g. "PR
+// was closed without merging" or "Status was Done but issue is open." Distinct
+// from the attempt sentinel so reconcile breadcrumbs don't inflate the
+// agent-attempt count.
+const ReconcileSentinel = "<!-- klanky-reconcile -->"
+
+// BuildReconcileBreadcrumb formats a reconcile-pass comment body around the
+// given freeform text. Used by the run orchestrator when reconcile mutations
+// need to leave a trail on the issue.
+func BuildReconcileBreadcrumb(text string) string {
+	return fmt.Sprintf("%s\n**Klanky reconcile**\n\n%s\n", ReconcileSentinel, text)
+}
 
 // BreadcrumbData is the substitution input for BuildBreadcrumb.
 type BreadcrumbData struct {
@@ -35,7 +45,7 @@ type BreadcrumbData struct {
 // `<!-- klanky-attempt -->` sentinel as the count anchor.
 func BuildBreadcrumb(d BreadcrumbData) string {
 	var b strings.Builder
-	fmt.Fprintln(&b, klankyAttemptSentinel)
+	fmt.Fprintln(&b, AttemptSentinel)
 	fmt.Fprintf(&b, "**Klanky attempt #%d — needs-attention**\n\n", d.Attempt)
 	fmt.Fprintf(&b, "- Started: %s\n", d.StartedAt.Format(time.RFC3339))
 	fmt.Fprintf(&b, "- Duration: %s\n", d.Duration.Round(time.Second).String())
@@ -54,8 +64,8 @@ func BuildBreadcrumb(d BreadcrumbData) string {
 // CountPriorAttempts returns the number of comments on the issue whose body
 // starts with the klanky-attempt sentinel. The next attempt's number is
 // returned-value + 1.
-func CountPriorAttempts(ctx context.Context, r Runner, repoSlug string, taskNumber int) (int, error) {
-	out, err := r.Run(ctx, "gh", "issue", "view", itoa(taskNumber),
+func CountPriorAttempts(ctx context.Context, r gh.Runner, repoSlug string, taskNumber int) (int, error) {
+	out, err := r.Run(ctx, "gh", "issue", "view", strconv.Itoa(taskNumber),
 		"--repo", repoSlug, "--json", "comments")
 	if err != nil {
 		return 0, fmt.Errorf("gh issue view: %w", err)
@@ -70,7 +80,7 @@ func CountPriorAttempts(ctx context.Context, r Runner, repoSlug string, taskNumb
 	}
 	count := 0
 	for _, c := range resp.Comments {
-		if strings.HasPrefix(strings.TrimSpace(c.Body), klankyAttemptSentinel) {
+		if strings.HasPrefix(strings.TrimSpace(c.Body), AttemptSentinel) {
 			count++
 		}
 	}
@@ -78,8 +88,8 @@ func CountPriorAttempts(ctx context.Context, r Runner, repoSlug string, taskNumb
 }
 
 // PostBreadcrumb posts a comment with the given body on the task issue.
-func PostBreadcrumb(ctx context.Context, r Runner, repoSlug string, taskNumber int, body string) error {
-	if _, err := r.Run(ctx, "gh", "issue", "comment", itoa(taskNumber),
+func PostBreadcrumb(ctx context.Context, r gh.Runner, repoSlug string, taskNumber int, body string) error {
+	if _, err := r.Run(ctx, "gh", "issue", "comment", strconv.Itoa(taskNumber),
 		"--repo", repoSlug, "--body", body); err != nil {
 		return fmt.Errorf("gh issue comment: %w", err)
 	}

@@ -1,10 +1,12 @@
-package main
+package worktree
 
 import (
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
 // DefaultWorktreeRoot returns ~/.klanky/worktrees, the locked-by-design root
@@ -27,7 +29,7 @@ func WorktreePath(root, repoName string, featureID, taskNumber int) string {
 // worktree registry first so retries always start clean.
 //
 // repoRoot is the absolute path to the main checkout (where .git lives).
-func EnsureCleanWorktree(ctx context.Context, r Runner, repoRoot, wtPath, branch, base string) error {
+func EnsureCleanWorktree(ctx context.Context, r gh.Runner, repoRoot, wtPath, branch, base string) error {
 	if err := os.RemoveAll(wtPath); err != nil {
 		return fmt.Errorf("rm worktree path %s: %w", wtPath, err)
 	}
@@ -46,7 +48,7 @@ func EnsureCleanWorktree(ctx context.Context, r Runner, repoRoot, wtPath, branch
 // RemoveWorktree tears down the per-task worktree at wtPath. Uses --force so
 // untracked agent scratch files (TDD experiments, build artifacts) don't block
 // cleanup of an otherwise successful task.
-func RemoveWorktree(ctx context.Context, r Runner, repoRoot, wtPath string) error {
+func RemoveWorktree(ctx context.Context, r gh.Runner, repoRoot, wtPath string) error {
 	if _, err := r.Run(ctx, "git", "-C", repoRoot, "worktree", "remove", wtPath, "--force"); err != nil {
 		return fmt.Errorf("git worktree remove %s: %w", wtPath, err)
 	}

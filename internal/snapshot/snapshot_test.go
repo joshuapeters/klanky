@@ -1,33 +1,36 @@
-package main
+package snapshot
 
 import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-func mockConfig() *Config {
-	return &Config{
+func mockConfig() *config.Config {
+	return &config.Config{
 		SchemaVersion: 1,
-		Repo:          ConfigRepo{Owner: "alice", Name: "proj"},
-		Project: ConfigProject{
+		Repo:          config.ConfigRepo{Owner: "alice", Name: "proj"},
+		Project: config.ConfigProject{
 			URL: "https://github.com/users/alice/projects/1", Number: 1,
 			NodeID: "PVT_x", OwnerLogin: "alice", OwnerType: "User",
-			Fields: ConfigFields{
-				Phase: ConfigField{ID: "PVTF_p", Name: "Phase"},
-				Status: ConfigStatusField{ID: "PVTSSF_s", Name: "Status",
+			Fields: config.ConfigFields{
+				Phase: config.ConfigField{ID: "PVTF_p", Name: "Phase"},
+				Status: config.ConfigStatusField{ID: "PVTSSF_s", Name: "Status",
 					Options: map[string]string{
 						"Todo": "a", "In Progress": "b",
 						"In Review": "c", "Needs Attention": "d", "Done": "e",
 					}},
 			},
 		},
-		FeatureLabel: ConfigLabel{Name: "klanky:feature"},
+		FeatureLabel: config.ConfigLabel{Name: "klanky:feature"},
 	}
 }
 
 func TestFetchSnapshot_ParsesTasksAndProjectFields(t *testing.T) {
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 
 	graphqlResp := `{"data":{"repository":{"issue":{
 		"number": 100, "title": "Auth refactor",
@@ -60,7 +63,7 @@ func TestFetchSnapshot_ParsesTasksAndProjectFields(t *testing.T) {
 	}}}}`
 	r.Stub(
 		[]string{"gh", "api", "graphql",
-			"-f", "query=" + snapshotQuery,
+			"-f", "query=" + SnapshotQuery,
 			"-F", "number=100",
 			"-f", "owner=alice",
 			"-f", "repo=proj"},
@@ -120,7 +123,7 @@ func TestFetchSnapshot_ParsesTasksAndProjectFields(t *testing.T) {
 }
 
 func TestFetchSnapshot_HandlesMissingPhaseAndStatus(t *testing.T) {
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	graphqlResp := `{"data":{"repository":{"issue":{
 		"number": 100, "title": "F",
 		"subIssues": {"nodes": [
@@ -137,7 +140,7 @@ func TestFetchSnapshot_HandlesMissingPhaseAndStatus(t *testing.T) {
 	}}}}`
 	r.Stub(
 		[]string{"gh", "api", "graphql",
-			"-f", "query=" + snapshotQuery,
+			"-f", "query=" + SnapshotQuery,
 			"-F", "number=100",
 			"-f", "owner=alice",
 			"-f", "repo=proj"},
@@ -164,7 +167,7 @@ func TestFetchSnapshot_HandlesMissingPhaseAndStatus(t *testing.T) {
 }
 
 func TestFetchSnapshot_FiltersForeignProjectItems(t *testing.T) {
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 	graphqlResp := `{"data":{"repository":{"issue":{
 		"number": 100, "title": "F",
 		"subIssues": {"nodes": [
@@ -182,7 +185,7 @@ func TestFetchSnapshot_FiltersForeignProjectItems(t *testing.T) {
 	}}}}`
 	r.Stub(
 		[]string{"gh", "api", "graphql",
-			"-f", "query=" + snapshotQuery,
+			"-f", "query=" + SnapshotQuery,
 			"-F", "number=100",
 			"-f", "owner=alice",
 			"-f", "repo=proj"},
@@ -209,7 +212,7 @@ func TestFetchSnapshot_FiltersForeignProjectItems(t *testing.T) {
 }
 
 func TestFetchSnapshot_RejectsTooManySubIssues(t *testing.T) {
-	r := NewFakeRunner()
+	r := gh.NewFakeRunner()
 
 	var sb strings.Builder
 	sb.WriteString(`{"data":{"repository":{"issue":{"number":100,"title":"F","subIssues":{"nodes":[`)
@@ -223,7 +226,7 @@ func TestFetchSnapshot_RejectsTooManySubIssues(t *testing.T) {
 
 	r.Stub(
 		[]string{"gh", "api", "graphql",
-			"-f", "query=" + snapshotQuery,
+			"-f", "query=" + SnapshotQuery,
 			"-F", "number=100",
 			"-f", "owner=alice",
 			"-f", "repo=proj"},

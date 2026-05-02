@@ -1,4 +1,4 @@
-package main
+package link
 
 import (
 	"context"
@@ -10,25 +10,19 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-type ProjectLinkOptions struct {
+type Options struct {
 	ProjectURL string
 	RepoSlug   string
 	ConfigPath string
 }
 
-func newProjectCmd(cfgPath string) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "project",
-		Short: "Manage project linkage",
-	}
-	cmd.AddCommand(newProjectLinkCmd(cfgPath))
-	return cmd
-}
-
-func newProjectLinkCmd(cfgPath string) *cobra.Command {
-	var opts ProjectLinkOptions
+func NewCmdLink(cfgPath string) *cobra.Command {
+	var opts Options
 	cmd := &cobra.Command{
 		Use:   "link <project-url>",
 		Short: "Validate and link an existing conformant Projects v2 project",
@@ -36,7 +30,7 @@ func newProjectLinkCmd(cfgPath string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.ProjectURL = args[0]
 			opts.ConfigPath = cfgPath
-			return RunProjectLink(cmd.Context(), RealRunner{}, opts, cmd.OutOrStdout())
+			return RunProjectLink(cmd.Context(), gh.RealRunner{}, opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&opts.RepoSlug, "repo", "", "owner/name of the repo (required if not in a git checkout)")
@@ -74,7 +68,7 @@ func ParseProjectURL(s string) (owner string, number int, ownerType string, err 
 	return parts[1], n, ownerType, nil
 }
 
-func RunProjectLink(ctx context.Context, r Runner, opts ProjectLinkOptions, out io.Writer) error {
+func RunProjectLink(ctx context.Context, r gh.Runner, opts Options, out io.Writer) error {
 	if opts.RepoSlug == "" {
 		return fmt.Errorf("--repo is required (owner/name)")
 	}
@@ -108,14 +102,14 @@ func RunProjectLink(ctx context.Context, r Runner, opts ProjectLinkOptions, out 
 	if err != nil {
 		return fmt.Errorf("gh project field-list: %w", err)
 	}
-	var pf ProjectFields
+	var pf config.ProjectFields
 	if err := json.Unmarshal(fieldOut, &pf); err != nil {
 		return fmt.Errorf("parse field-list: %w", err)
 	}
 
 	labelOut, err := r.Run(ctx, "gh", "label", "list",
 		"--repo", opts.RepoSlug,
-		"--search", LabelFeatureName,
+		"--search", config.LabelFeatureName,
 		"--json", "name")
 	if err != nil {
 		return fmt.Errorf("gh label list: %w", err)
@@ -128,48 +122,48 @@ func RunProjectLink(ctx context.Context, r Runner, opts ProjectLinkOptions, out 
 	}
 
 	var validationErrs []string
-	validationErrs = append(validationErrs, ValidateProject(pf)...)
+	validationErrs = append(validationErrs, config.ValidateProject(pf)...)
 
 	labelFound := false
 	for _, l := range labels {
-		if l.Name == LabelFeatureName {
+		if l.Name == config.LabelFeatureName {
 			labelFound = true
 			break
 		}
 	}
 	if !labelFound {
 		validationErrs = append(validationErrs,
-			fmt.Sprintf("repo %s missing label %q", opts.RepoSlug, LabelFeatureName))
+			fmt.Sprintf("repo %s missing label %q", opts.RepoSlug, config.LabelFeatureName))
 	}
 
 	if len(validationErrs) > 0 {
 		return fmt.Errorf("project not conformant:\n  - %s", strings.Join(validationErrs, "\n  - "))
 	}
 
-	phase := findField(pf.Fields, FieldNamePhase)
-	status := findField(pf.Fields, FieldNameStatus)
+	phase := config.FindField(pf.Fields, config.FieldNamePhase)
+	status := config.FindField(pf.Fields, config.FieldNameStatus)
 	options := make(map[string]string, len(status.Options))
 	for _, o := range status.Options {
 		options[o.Name] = o.ID
 	}
 
-	cfg := &Config{
-		SchemaVersion: SchemaVersion,
-		Repo:          ConfigRepo{Owner: repoParts[0], Name: repoParts[1]},
-		Project: ConfigProject{
+	cfg := &config.Config{
+		SchemaVersion: config.SchemaVersion,
+		Repo:          config.ConfigRepo{Owner: repoParts[0], Name: repoParts[1]},
+		Project: config.ConfigProject{
 			URL:        header.URL,
 			Number:     header.Number,
 			NodeID:     header.ID,
 			OwnerLogin: owner,
 			OwnerType:  ownerType,
-			Fields: ConfigFields{
-				Phase:  ConfigField{ID: phase.ID, Name: phase.Name},
-				Status: ConfigStatusField{ID: status.ID, Name: status.Name, Options: options},
+			Fields: config.ConfigFields{
+				Phase:  config.ConfigField{ID: phase.ID, Name: phase.Name},
+				Status: config.ConfigStatusField{ID: status.ID, Name: status.Name, Options: options},
 			},
 		},
-		FeatureLabel: ConfigLabel{Name: LabelFeatureName},
+		FeatureLabel: config.ConfigLabel{Name: config.LabelFeatureName},
 	}
-	if err := SaveConfig(opts.ConfigPath, cfg); err != nil {
+	if err := config.SaveConfig(opts.ConfigPath, cfg); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Wrote %s\n", opts.ConfigPath)

@@ -1,4 +1,4 @@
-package main
+package run
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 )
 
 func TestRunCmd_RequiresFeatureIDArg(t *testing.T) {
-	cmd := newRunCmd("/nonexistent/.klankyrc.json")
+	cmd := NewCmdRun("/nonexistent/.klankyrc.json")
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{})
@@ -21,7 +21,7 @@ func TestRunCmd_RequiresFeatureIDArg(t *testing.T) {
 }
 
 func TestRunCmd_RejectsNonNumericFeatureID(t *testing.T) {
-	cmd := newRunCmd("/nonexistent/.klankyrc.json")
+	cmd := NewCmdRun("/nonexistent/.klankyrc.json")
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"abc"})
@@ -36,7 +36,7 @@ func TestRunCmd_RejectsNonNumericFeatureID(t *testing.T) {
 }
 
 func TestRunCmd_MissingConfig_ReturnsHelpfulError(t *testing.T) {
-	cmd := newRunCmd("/nonexistent/.klankyrc.json")
+	cmd := NewCmdRun("/nonexistent/.klankyrc.json")
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
 	cmd.SetArgs([]string{"42"})
@@ -73,17 +73,13 @@ func TestRunCmd_ValidArgs_AttemptsToRun(t *testing.T) {
 	}
 
 	out := &bytes.Buffer{}
-	cmd := newRunCmd(cfgPath)
+	cmd := NewCmdRun(cfgPath)
 	cmd.SetOut(out)
 	cmd.SetErr(out)
 	cmd.SetArgs([]string{"42"})
 
 	err := cmd.Execute()
-	// We expect this to fail because the real `gh` will reject the call (no auth
-	// in test env) — but it must NOT fail at config-load time, and the error
-	// message should not be the "TODO: not implemented" stub.
 	if err == nil {
-		// Could also succeed in environments where gh is set up; that's fine.
 		return
 	}
 	if strings.Contains(err.Error(), "TODO") {

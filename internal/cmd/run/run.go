@@ -1,4 +1,4 @@
-package main
+package run
 
 import (
 	"fmt"
@@ -8,11 +8,18 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/joshuapeters/klanky/internal/agent"
+	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
+	"github.com/joshuapeters/klanky/internal/progress"
+	runorch "github.com/joshuapeters/klanky/internal/run"
+	"github.com/joshuapeters/klanky/internal/worktree"
 )
 
 const defaultTaskTimeout = 20 * time.Minute
 
-func newRunCmd(cfgPath string) *cobra.Command {
+func NewCmdRun(cfgPath string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run <feature-id>",
 		Short: "Execute the current phase of a feature: spawn parallel agents, open PRs",
@@ -23,7 +30,7 @@ func newRunCmd(cfgPath string) *cobra.Command {
 				return fmt.Errorf("feature-id must be a positive integer, got %q", args[0])
 			}
 
-			cfg, err := LoadConfig(cfgPath)
+			cfg, err := config.LoadConfig(cfgPath)
 			if err != nil {
 				return err
 			}
@@ -33,21 +40,21 @@ func newRunCmd(cfgPath string) *cobra.Command {
 				return fmt.Errorf("resolve repo root: %w", err)
 			}
 
-			wtRoot, err := DefaultWorktreeRoot()
+			wtRoot, err := worktree.DefaultWorktreeRoot()
 			if err != nil {
 				return err
 			}
 
-			progress := NewProgress(os.Stderr, time.Now)
+			prog := progress.NewProgress(os.Stderr, time.Now)
 
-			return RunFeature(cmd.Context(), RunFeatureDeps{
-				Runner:       RealRunner{},
-				Spawner:      RealSpawner{},
+			return runorch.Feature(cmd.Context(), runorch.Deps{
+				Runner:       gh.RealRunner{},
+				Spawner:      agent.RealSpawner{},
 				Config:       cfg,
 				RepoRoot:     repoRoot,
 				FeatureID:    featureID,
 				WorktreeRoot: wtRoot,
-				Progress:     progress,
+				Progress:     prog,
 				SummaryOut:   cmd.OutOrStdout(),
 				Timeout:      defaultTaskTimeout,
 			})

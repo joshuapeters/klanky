@@ -1,10 +1,12 @@
-package main
+package snapshot
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
+
+	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
 // Snapshot is the read-only view of a feature's state at the start of a run.
@@ -42,7 +44,7 @@ type PRInfo struct {
 	HeadRefName string `json:"headRefName"`
 }
 
-const snapshotQuery = `query($owner: String!, $repo: String!, $number: Int!) {
+const SnapshotQuery = `query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     issue(number: $number) {
       number
@@ -82,7 +84,7 @@ const snapshotQuery = `query($owner: String!, $repo: String!, $number: Int!) {
 // FetchSnapshot makes one GraphQL call for tasks+fields and one PR list call,
 // then returns a populated Snapshot. The PR list filters to klanky-pattern
 // branches under this feature.
-func FetchSnapshot(ctx context.Context, r Runner, cfg *Config, featureID int) (*Snapshot, error) {
+func FetchSnapshot(ctx context.Context, r gh.Runner, cfg *config.Config, featureID int) (*Snapshot, error) {
 	var gqlResp struct {
 		Repository struct {
 			Issue struct {
@@ -119,7 +121,7 @@ func FetchSnapshot(ctx context.Context, r Runner, cfg *Config, featureID int) (*
 		} `json:"repository"`
 	}
 
-	if err := RunGraphQL(ctx, r, snapshotQuery, map[string]any{
+	if err := gh.RunGraphQL(ctx, r, SnapshotQuery, map[string]any{
 		"owner":  cfg.Repo.Owner,
 		"repo":   cfg.Repo.Name,
 		"number": featureID,
@@ -152,12 +154,12 @@ func FetchSnapshot(ctx context.Context, r Runner, cfg *Config, featureID int) (*
 			ti.ItemID = pi.ID
 			for _, fv := range pi.FieldValues.Nodes {
 				switch fv.Field.Name {
-				case FieldNamePhase:
+				case config.FieldNamePhase:
 					if fv.Number != nil {
 						p := int(*fv.Number)
 						ti.Phase = &p
 					}
-				case FieldNameStatus:
+				case config.FieldNameStatus:
 					ti.Status = fv.Name
 				}
 			}
@@ -198,6 +200,3 @@ func FetchSnapshot(ctx context.Context, r Runner, cfg *Config, featureID int) (*
 func BranchForTask(featureID, taskNumber int) string {
 	return fmt.Sprintf("klanky/feat-%d/task-%d", featureID, taskNumber)
 }
-
-// itoa is a tiny helper so callers don't need strconv just to format ints in a single place.
-func itoa(n int) string { return strconv.Itoa(n) }

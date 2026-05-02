@@ -1,4 +1,4 @@
-package main
+package config
 
 import "fmt"
 
@@ -38,14 +38,14 @@ type ProjectFieldOption struct {
 func ValidateProject(pf ProjectFields) []string {
 	var errs []string
 
-	phase := findField(pf.Fields, FieldNamePhase)
+	phase := FindField(pf.Fields, FieldNamePhase)
 	if phase == nil {
 		errs = append(errs, fmt.Sprintf("missing required field %q (expected type %s)", FieldNamePhase, FieldTypeNumber))
 	} else if phase.Type != FieldTypeNumber {
 		errs = append(errs, fmt.Sprintf("field %q has type %q, want %q", FieldNamePhase, phase.Type, FieldTypeNumber))
 	}
 
-	status := findField(pf.Fields, FieldNameStatus)
+	status := FindField(pf.Fields, FieldNameStatus)
 	if status == nil {
 		errs = append(errs, fmt.Sprintf("missing required field %q (expected type %s)", FieldNameStatus, FieldTypeSelect))
 	} else {
@@ -66,7 +66,7 @@ func ValidateProject(pf ProjectFields) []string {
 	return errs
 }
 
-func findField(fs []ProjectField, name string) *ProjectField {
+func FindField(fs []ProjectField, name string) *ProjectField {
 	for i := range fs {
 		if fs[i].Name == name {
 			return &fs[i]

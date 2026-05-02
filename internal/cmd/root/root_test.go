@@ -1,4 +1,4 @@
-package main
+package root
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 
 func TestRootCommand_Help_ListsAllSubcommands(t *testing.T) {
 	out := &bytes.Buffer{}
-	cmd := newRootCmd()
+	cmd := NewCmdRoot(".klankyrc.json", "dev", "none", "unknown")
 	cmd.SetOut(out)
 	cmd.SetErr(out)
 	cmd.SetArgs([]string{"--help"})
@@ -18,7 +18,7 @@ func TestRootCommand_Help_ListsAllSubcommands(t *testing.T) {
 	}
 
 	helpText := out.String()
-	for _, want := range []string{"init", "project", "feature", "task", "run"} {
+	for _, want := range []string{"init", "project", "feature", "task", "run", "version"} {
 		if !strings.Contains(helpText, want) {
 			t.Errorf("expected --help to mention %q; got:\n%s", want, helpText)
 		}
@@ -27,7 +27,7 @@ func TestRootCommand_Help_ListsAllSubcommands(t *testing.T) {
 
 func TestRootCommand_Help_IncludesVersion(t *testing.T) {
 	out := &bytes.Buffer{}
-	cmd := newRootCmd()
+	cmd := NewCmdRoot(".klankyrc.json", "dev", "none", "unknown")
 	cmd.SetOut(out)
 	cmd.SetErr(out)
 	cmd.SetArgs([]string{"--help"})
@@ -47,7 +47,7 @@ func TestRootCommand_Help_IncludesVersion(t *testing.T) {
 
 func TestRootCommand_VersionFlag_PrintsVersion(t *testing.T) {
 	out := &bytes.Buffer{}
-	cmd := newRootCmd()
+	cmd := NewCmdRoot(".klankyrc.json", "dev", "none", "unknown")
 	cmd.SetOut(out)
 	cmd.SetErr(out)
 	cmd.SetArgs([]string{"--version"})

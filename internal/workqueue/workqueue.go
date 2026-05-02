@@ -1,12 +1,14 @@
-package main
+package workqueue
 
-// WorkQueueResult is the post-reconcile decision about what to actually run.
-type WorkQueueResult struct {
-	AllDone             bool       // every task in the feature has issue=closed
-	CurrentPhase        int        // lowest phase number with any open issue; 0 when AllDone
-	Eligible            []TaskInfo // current-phase tasks the runner will spawn agents for
-	AwaitingReview      []TaskInfo // current-phase tasks with Status=In Review (informational, surfaced in messaging)
-	SurvivingInProgress []TaskInfo // current-phase tasks with Status=In Progress that somehow survived reconcile (a bug — surfaced as scenario C)
+import "github.com/joshuapeters/klanky/internal/snapshot"
+
+// Result is the post-reconcile decision about what to actually run.
+type Result struct {
+	AllDone             bool                // every task in the feature has issue=closed
+	CurrentPhase        int                 // lowest phase number with any open issue; 0 when AllDone
+	Eligible            []snapshot.TaskInfo // current-phase tasks the runner will spawn agents for
+	AwaitingReview      []snapshot.TaskInfo // current-phase tasks with Status=In Review (informational, surfaced in messaging)
+	SurvivingInProgress []snapshot.TaskInfo // current-phase tasks with Status=In Progress that somehow survived reconcile (a bug — surfaced as scenario C)
 }
 
 // SelectWork picks the current phase and partitions its tasks into the
@@ -19,8 +21,8 @@ type WorkQueueResult struct {
 // applying reconcile actions in their own code path before relying on these
 // queues. Most callers will call ApplyReconcile first (Task 11) which mutates
 // the snapshot in-memory.
-func SelectWork(snap *Snapshot) WorkQueueResult {
-	openByPhase := map[int][]TaskInfo{}
+func SelectWork(snap *snapshot.Snapshot) Result {
+	openByPhase := map[int][]snapshot.TaskInfo{}
 	hasOpen := false
 	for _, task := range snap.Tasks {
 		if task.State != "OPEN" {
@@ -36,7 +38,7 @@ func SelectWork(snap *Snapshot) WorkQueueResult {
 	}
 
 	if !hasOpen {
-		return WorkQueueResult{AllDone: true}
+		return Result{AllDone: true}
 	}
 
 	// Lowest phase with any open task that has a Phase value.
@@ -48,10 +50,10 @@ func SelectWork(snap *Snapshot) WorkQueueResult {
 	}
 	// If every open task lacks a Phase, openByPhase is empty — degenerate case.
 	if current == -1 {
-		return WorkQueueResult{AllDone: false, CurrentPhase: 0}
+		return Result{AllDone: false, CurrentPhase: 0}
 	}
 
-	res := WorkQueueResult{CurrentPhase: current}
+	res := Result{CurrentPhase: current}
 	for _, task := range openByPhase[current] {
 		switch task.Status {
 		case "", "Todo", "Needs Attention":

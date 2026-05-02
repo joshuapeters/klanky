@@ -1,4 +1,4 @@
-package main
+package add
 
 import (
 	"context"
@@ -9,9 +9,13 @@ import (
 	"strconv"
 
 	"github.com/spf13/cobra"
+
+	"github.com/joshuapeters/klanky/internal/cliutil"
+	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-type TaskAddOptions struct {
+type Options struct {
 	FeatureID int
 	Phase     int
 	Title     string
@@ -19,28 +23,19 @@ type TaskAddOptions struct {
 }
 
 // addSubIssueMutation links a child issue as a sub-issue of a parent.
-const addSubIssueMutation = `mutation($issueId: ID!, $subIssueId: ID!) { addSubIssue(input: {issueId: $issueId, subIssueId: $subIssueId}) { issue { number } } }`
+const AddSubIssueMutation = `mutation($issueId: ID!, $subIssueId: ID!) { addSubIssue(input: {issueId: $issueId, subIssueId: $subIssueId}) { issue { number } } }`
 
-func newTaskCmd(cfgPath string) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "task",
-		Short: "Manage tasks",
-	}
-	cmd.AddCommand(newTaskAddCmd(cfgPath))
-	return cmd
-}
-
-func newTaskAddCmd(cfgPath string) *cobra.Command {
-	var opts TaskAddOptions
+func NewCmdAdd(cfgPath string) *cobra.Command {
+	var opts Options
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Create a new Task sub-issue under a Feature",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := LoadConfig(cfgPath)
+			cfg, err := config.LoadConfig(cfgPath)
 			if err != nil {
 				return err
 			}
-			return RunTaskAdd(cmd.Context(), RealRunner{}, cfg, opts, cmd.OutOrStdout())
+			return RunTaskAdd(cmd.Context(), gh.RealRunner{}, cfg, opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().IntVar(&opts.FeatureID, "feature", 0, "Parent feature issue number (required)")
@@ -50,7 +45,7 @@ func newTaskAddCmd(cfgPath string) *cobra.Command {
 	return cmd
 }
 
-func RunTaskAdd(ctx context.Context, r Runner, cfg *Config, opts TaskAddOptions, out io.Writer) error {
+func RunTaskAdd(ctx context.Context, r gh.Runner, cfg *config.Config, opts Options, out io.Writer) error {
 	if opts.FeatureID == 0 {
 		return fmt.Errorf("--feature is required")
 	}
@@ -94,7 +89,7 @@ func RunTaskAdd(ctx context.Context, r Runner, cfg *Config, opts TaskAddOptions,
 	if err != nil {
 		return fmt.Errorf("gh issue create: %w", err)
 	}
-	number := lastIssueNumberFromURL(string(createOut))
+	number := gh.LastIssueNumberFromURL(string(createOut))
 	if number == 0 {
 		return fmt.Errorf("could not parse issue number: %q", string(createOut))
 	}
@@ -122,7 +117,7 @@ func RunTaskAdd(ctx context.Context, r Runner, cfg *Config, opts TaskAddOptions,
 			} `json:"issue"`
 		} `json:"addSubIssue"`
 	}
-	if err := RunGraphQL(ctx, r, addSubIssueMutation,
+	if err := gh.RunGraphQL(ctx, r, AddSubIssueMutation,
 		map[string]any{"issueId": parent.ID, "subIssueId": task.ID},
 		&subResult,
 	); err != nil {
@@ -169,7 +164,7 @@ func RunTaskAdd(ctx context.Context, r Runner, cfg *Config, opts TaskAddOptions,
 		return fmt.Errorf("set Status: %w", err)
 	}
 
-	return PrintJSONLine(out, map[string]any{
+	return cliutil.PrintJSONLine(out, map[string]any{
 		"task_id": task.Number,
 		"url":     task.URL,
 	})

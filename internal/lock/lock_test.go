@@ -1,9 +1,10 @@
-package main
+package lock
 
 import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -43,7 +44,7 @@ func TestAcquireLock_RefusesWhenAlive(t *testing.T) {
 	path := filepath.Join(dir, "runner-7.lock")
 
 	// Write a lock file claiming the current process owns it (definitely alive).
-	content := []byte(`{"pid": ` + itoa(os.Getpid()) + `, "started_at": "2026-04-26T10:00:00Z"}`)
+	content := []byte(`{"pid": ` + strconv.Itoa(os.Getpid()) + `, "started_at": "2026-04-26T10:00:00Z"}`)
 	if err := os.WriteFile(path, content, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +66,7 @@ func TestAcquireLock_TakesOverDeadPID(t *testing.T) {
 	// system. We need a dead PID. Find one by scanning a high range; or trust
 	// that PID 999999 is unlikely to exist.
 	dead := findDeadPID(t)
-	content := []byte(`{"pid": ` + itoa(dead) + `, "started_at": "2026-04-26T10:00:00Z"}`)
+	content := []byte(`{"pid": ` + strconv.Itoa(dead) + `, "started_at": "2026-04-26T10:00:00Z"}`)
 	if err := os.WriteFile(path, content, 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +79,7 @@ func TestAcquireLock_TakesOverDeadPID(t *testing.T) {
 
 	// Verify the lock was overwritten with our PID.
 	data, _ := os.ReadFile(path)
-	if !strings.Contains(string(data), itoa(os.Getpid())) {
+	if !strings.Contains(string(data), strconv.Itoa(os.Getpid())) {
 		t.Errorf("lock file should contain our PID; got: %s", data)
 	}
 }

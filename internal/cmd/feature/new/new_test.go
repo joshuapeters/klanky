@@ -1,4 +1,4 @@
-package main
+package new
 
 import (
 	"bytes"
@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
 func writeTestConfig(t *testing.T, dir string) string {
@@ -36,12 +39,12 @@ func writeTestConfig(t *testing.T, dir string) string {
 func TestFeatureNew_CallsGhIssueCreateAndProjectAdd_AndPrintsJSON(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := writeTestConfig(t, dir)
-	cfg, err := LoadConfig(cfgPath)
+	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	fake := NewFakeRunner()
+	fake := gh.NewFakeRunner()
 	fake.Stub(
 		[]string{"gh", "issue", "create",
 			"--repo", "alice/proj",
@@ -63,7 +66,7 @@ func TestFeatureNew_CallsGhIssueCreateAndProjectAdd_AndPrintsJSON(t *testing.T) 
 	)
 
 	out := &bytes.Buffer{}
-	err = RunFeatureNew(context.Background(), fake, cfg, FeatureNewOptions{
+	err = RunFeatureNew(context.Background(), fake, cfg, Options{
 		Title: "Login overhaul",
 	}, out)
 	if err != nil {
@@ -82,13 +85,13 @@ func TestFeatureNew_CallsGhIssueCreateAndProjectAdd_AndPrintsJSON(t *testing.T) 
 func TestFeatureNew_WithBodyFile_ReadsAndPasses(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := writeTestConfig(t, dir)
-	cfg, _ := LoadConfig(cfgPath)
+	cfg, _ := config.LoadConfig(cfgPath)
 	bodyPath := filepath.Join(dir, "body.md")
 	if err := os.WriteFile(bodyPath, []byte("Long context goes here."), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	fake := NewFakeRunner()
+	fake := gh.NewFakeRunner()
 	fake.Stub(
 		[]string{"gh", "issue", "create",
 			"--repo", "alice/proj",
@@ -110,7 +113,7 @@ func TestFeatureNew_WithBodyFile_ReadsAndPasses(t *testing.T) {
 	)
 
 	out := &bytes.Buffer{}
-	err := RunFeatureNew(context.Background(), fake, cfg, FeatureNewOptions{
+	err := RunFeatureNew(context.Background(), fake, cfg, Options{
 		Title:    "X",
 		BodyFile: bodyPath,
 	}, out)
@@ -120,9 +123,9 @@ func TestFeatureNew_WithBodyFile_ReadsAndPasses(t *testing.T) {
 }
 
 func TestFeatureNew_TitleRequired(t *testing.T) {
-	cfg := &Config{}
+	cfg := &config.Config{}
 	out := &bytes.Buffer{}
-	err := RunFeatureNew(context.Background(), NewFakeRunner(), cfg, FeatureNewOptions{}, out)
+	err := RunFeatureNew(context.Background(), gh.NewFakeRunner(), cfg, Options{}, out)
 	if err == nil {
 		t.Fatal("expected error for missing title")
 	}

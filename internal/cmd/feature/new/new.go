@@ -1,4 +1,4 @@
-package main
+package new
 
 import (
 	"context"
@@ -7,36 +7,30 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/joshuapeters/klanky/internal/cliutil"
+	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-type FeatureNewOptions struct {
+type Options struct {
 	Title    string
 	BodyFile string
 }
 
-func newFeatureCmd(cfgPath string) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "feature",
-		Short: "Manage features",
-	}
-	cmd.AddCommand(newFeatureNewCmd(cfgPath))
-	return cmd
-}
-
-func newFeatureNewCmd(cfgPath string) *cobra.Command {
-	var opts FeatureNewOptions
+func NewCmdNew(cfgPath string) *cobra.Command {
+	var opts Options
 	cmd := &cobra.Command{
 		Use:   "new",
 		Short: "Create a new Feature issue",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, err := LoadConfig(cfgPath)
+			cfg, err := config.LoadConfig(cfgPath)
 			if err != nil {
 				return err
 			}
-			return RunFeatureNew(cmd.Context(), RealRunner{}, cfg, opts, cmd.OutOrStdout())
+			return RunFeatureNew(cmd.Context(), gh.RealRunner{}, cfg, opts, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().StringVar(&opts.Title, "title", "", "Title of the feature (required)")
@@ -46,7 +40,7 @@ func newFeatureNewCmd(cfgPath string) *cobra.Command {
 
 // RunFeatureNew creates a Feature issue, adds it to the configured project,
 // and writes a single-line JSON {"feature_id": N, "url": "..."} to out.
-func RunFeatureNew(ctx context.Context, r Runner, cfg *Config, opts FeatureNewOptions, out io.Writer) error {
+func RunFeatureNew(ctx context.Context, r gh.Runner, cfg *config.Config, opts Options, out io.Writer) error {
 	if opts.Title == "" {
 		return fmt.Errorf("--title is required")
 	}
@@ -71,7 +65,7 @@ func RunFeatureNew(ctx context.Context, r Runner, cfg *Config, opts FeatureNewOp
 	if err != nil {
 		return fmt.Errorf("gh issue create: %w", err)
 	}
-	number := lastIssueNumberFromURL(string(createOut))
+	number := gh.LastIssueNumberFromURL(string(createOut))
 	if number == 0 {
 		return fmt.Errorf("could not parse issue number from gh output: %q", string(createOut))
 	}
@@ -100,31 +94,8 @@ func RunFeatureNew(ctx context.Context, r Runner, cfg *Config, opts FeatureNewOp
 		return fmt.Errorf("gh project item-add: %w", err)
 	}
 
-	return PrintJSONLine(out, map[string]any{
+	return cliutil.PrintJSONLine(out, map[string]any{
 		"feature_id": issue.Number,
 		"url":        issue.URL,
 	})
-}
-
-// lastIssueNumberFromURL extracts the trailing /issues/<n> number from a URL.
-// Returns 0 if no such pattern is found.
-func lastIssueNumberFromURL(s string) int {
-	const marker = "/issues/"
-	i := strings.LastIndex(s, marker)
-	if i == -1 {
-		return 0
-	}
-	rest := s[i+len(marker):]
-	end := 0
-	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
-		end++
-	}
-	if end == 0 {
-		return 0
-	}
-	n, err := strconv.Atoi(rest[:end])
-	if err != nil {
-		return 0
-	}
-	return n
 }

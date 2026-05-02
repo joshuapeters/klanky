@@ -1,9 +1,12 @@
-package main
+package statuswrite
 
 import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
 // WriteStatus sets the Status single-select field on a project item to the
@@ -12,7 +15,7 @@ import (
 //
 // Returns an error after exhausting retries; caller logs and continues
 // (status writes are best-effort by design — reconcile fixes any drift).
-func WriteStatus(ctx context.Context, r Runner, cfg *Config, itemID, statusName string, baseDelay time.Duration) error {
+func WriteStatus(ctx context.Context, r gh.Runner, cfg *config.Config, itemID, statusName string, baseDelay time.Duration) error {
 	optionID, ok := cfg.Project.Fields.Status.Options[statusName]
 	if !ok {
 		return fmt.Errorf("unknown Status option %q (config has %d options)",

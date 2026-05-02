@@ -1,4 +1,4 @@
-package main
+package link
 
 import (
 	"bytes"
@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/joshuapeters/klanky/internal/config"
+	"github.com/joshuapeters/klanky/internal/gh"
 )
 
 func TestParseProjectURL(t *testing.T) {
@@ -51,7 +54,7 @@ func TestProjectLink_ValidatesAndWritesConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".klankyrc.json")
 
-	fake := NewFakeRunner()
+	fake := gh.NewFakeRunner()
 	fake.Stub(
 		[]string{"gh", "project", "view", "4", "--owner", "alice", "--format", "json"},
 		[]byte(`{"id":"PVT_x","number":4,"url":"https://github.com/users/alice/projects/4","title":"T"}`), nil,
@@ -73,7 +76,7 @@ func TestProjectLink_ValidatesAndWritesConfig(t *testing.T) {
 	)
 
 	out := &bytes.Buffer{}
-	err := RunProjectLink(context.Background(), fake, ProjectLinkOptions{
+	err := RunProjectLink(context.Background(), fake, Options{
 		ProjectURL: "https://github.com/users/alice/projects/4",
 		RepoSlug:   "alice/proj",
 		ConfigPath: cfgPath,
@@ -82,7 +85,7 @@ func TestProjectLink_ValidatesAndWritesConfig(t *testing.T) {
 		t.Fatalf("RunProjectLink: %v", err)
 	}
 
-	cfg, err := LoadConfig(cfgPath)
+	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
 		t.Fatalf("config not written: %v", err)
 	}
@@ -101,7 +104,7 @@ func TestProjectLink_NonConforming_PrintsDiff(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".klankyrc.json")
 
-	fake := NewFakeRunner()
+	fake := gh.NewFakeRunner()
 	fake.Stub(
 		[]string{"gh", "project", "view", "4", "--owner", "alice", "--format", "json"},
 		[]byte(`{"id":"PVT_x","number":4,"url":"https://github.com/users/alice/projects/4"}`), nil,
@@ -121,7 +124,7 @@ func TestProjectLink_NonConforming_PrintsDiff(t *testing.T) {
 	)
 
 	out := &bytes.Buffer{}
-	err := RunProjectLink(context.Background(), fake, ProjectLinkOptions{
+	err := RunProjectLink(context.Background(), fake, Options{
 		ProjectURL: "https://github.com/users/alice/projects/4",
 		RepoSlug:   "alice/proj",
 		ConfigPath: cfgPath,

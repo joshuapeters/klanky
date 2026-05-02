@@ -1,12 +1,35 @@
-package main
+package statuswrite
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/joshuapeters/klanky/internal/config"
 )
+
+func mockConfig() *config.Config {
+	return &config.Config{
+		SchemaVersion: 1,
+		Repo:          config.ConfigRepo{Owner: "alice", Name: "proj"},
+		Project: config.ConfigProject{
+			URL: "https://github.com/users/alice/projects/1", Number: 1,
+			NodeID: "PVT_x", OwnerLogin: "alice", OwnerType: "User",
+			Fields: config.ConfigFields{
+				Phase: config.ConfigField{ID: "PVTF_p", Name: "Phase"},
+				Status: config.ConfigStatusField{ID: "PVTSSF_s", Name: "Status",
+					Options: map[string]string{
+						"Todo": "a", "In Progress": "b",
+						"In Review": "c", "Needs Attention": "d", "Done": "e",
+					}},
+			},
+		},
+		FeatureLabel: config.ConfigLabel{Name: "klanky:feature"},
+	}
+}
 
 // retryFakeRunner is a custom fake that fails the first N calls then succeeds.
 type retryFakeRunner struct {
@@ -94,10 +117,10 @@ func TestWriteStatus_PassesCorrectOptionID(t *testing.T) {
 	}
 
 	joined := fmt.Sprintf("%v", capturedArgs)
-	if !contains(joined, want) {
+	if !strings.Contains(joined, want) {
 		t.Errorf("expected option ID %q in args; got: %s", want, joined)
 	}
-	if !contains(joined, "ITEM-X") {
+	if !strings.Contains(joined, "ITEM-X") {
 		t.Errorf("expected ITEM-X in args; got: %s", joined)
 	}
 }
