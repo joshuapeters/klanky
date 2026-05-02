@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/joshuapeters/klanky/internal/config"
 	"github.com/joshuapeters/klanky/internal/gh"
 )
@@ -145,25 +146,13 @@ func TestParseDependsOn(t *testing.T) {
 			t.Errorf("parseDependsOn(%q) error: %v", in, err)
 			continue
 		}
-		if !slicesEqualInt(got, want) {
-			t.Errorf("parseDependsOn(%q) = %v, want %v", in, got, want)
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("parseDependsOn(%q) (-want +got):\n%s", in, diff)
 		}
 	}
 	if _, err := parseDependsOn("12,abc,5"); err == nil {
 		t.Errorf("expected error for non-integer token")
 	}
-}
-
-func slicesEqualInt(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func TestRunIssueAdd_HappyPath_NoDeps(t *testing.T) {
@@ -277,7 +266,14 @@ func TestRunIssueAdd_JSONOutput(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatalf("parse JSON: %v\n%s", err, out.String())
 	}
-	if got.Number != 42 || got.NodeID != "I_42" || got.Status != "Todo" {
-		t.Errorf("got %+v", got)
+	want := Result{
+		Number: 42,
+		URL:    "https://github.com/joshuapeters/klanky/issues/42",
+		NodeID: "I_42",
+		ItemID: "PVTI_42",
+		Status: "Todo",
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Result mismatch (-want +got):\n%s", diff)
 	}
 }

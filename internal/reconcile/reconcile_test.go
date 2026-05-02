@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/joshuapeters/klanky/internal/snapshot"
 )
 
@@ -32,6 +34,10 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
+// ignoreBreadcrumb compares Action values without asserting on the freeform
+// breadcrumb text — tests that care assert on it separately.
+var ignoreBreadcrumb = cmpopts.IgnoreFields(Action{}, "Breadcrumb")
+
 func find(actions []Action, num int) *Action {
 	for i := range actions {
 		if actions[i].IssueNumber == num {
@@ -47,21 +53,19 @@ func TestRow1_ClosedIssueGoesToDone(t *testing.T) {
 		issue(2, "CLOSED", "Done"), // already Done — no action
 		issue(3, "CLOSED", ""),
 	}, nil))
-	if a := find(got, 1); a == nil || a.NewStatus != "Done" {
-		t.Errorf("issue 1 → %+v, want Done", a)
+	want := []Action{
+		{IssueNumber: 1, ItemID: "PVTI_1", NewStatus: "Done"},
+		{IssueNumber: 3, ItemID: "PVTI_3", NewStatus: "Done"},
 	}
-	if a := find(got, 2); a != nil {
-		t.Errorf("issue 2 already Done; expected no action, got %+v", a)
-	}
-	if a := find(got, 3); a == nil || a.NewStatus != "Done" {
-		t.Errorf("issue 3 → %+v, want Done", a)
+	if diff := cmp.Diff(want, got, ignoreBreadcrumb); diff != "" {
+		t.Errorf("actions mismatch (-want +got):\n%s", diff)
 	}
 }
 
 func TestRow2_TodoIsNoOp(t *testing.T) {
 	got := Reconcile(snap("auth", []snapshot.Issue{issue(1, "OPEN", "Todo")}, nil))
-	if len(got) != 0 {
-		t.Errorf("expected no actions, got %v", got)
+	if diff := cmp.Diff([]Action(nil), got); diff != "" {
+		t.Errorf("expected no actions (-want +got):\n%s", diff)
 	}
 }
 
@@ -81,8 +85,9 @@ func TestRow4_InProgressWithOpenPRGoesToInReview(t *testing.T) {
 		snapshot.BranchForIssue("auth", 7): {Number: 99, State: "OPEN", URL: "x", HeadRefName: snapshot.BranchForIssue("auth", 7)},
 	}
 	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Progress")}, prs))
-	if a := find(got, 7); a == nil || a.NewStatus != "In Review" {
-		t.Errorf("got %+v, want In Review", a)
+	want := []Action{{IssueNumber: 7, ItemID: "PVTI_7", NewStatus: "In Review"}}
+	if diff := cmp.Diff(want, got, ignoreBreadcrumb); diff != "" {
+		t.Errorf("actions mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -91,8 +96,8 @@ func TestRow6_InReviewWithOpenPRIsNoOp(t *testing.T) {
 		snapshot.BranchForIssue("auth", 7): {Number: 99, State: "OPEN", HeadRefName: snapshot.BranchForIssue("auth", 7)},
 	}
 	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Review")}, prs))
-	if len(got) != 0 {
-		t.Errorf("expected no actions, got %v", got)
+	if diff := cmp.Diff([]Action(nil), got); diff != "" {
+		t.Errorf("expected no actions (-want +got):\n%s", diff)
 	}
 }
 
@@ -123,8 +128,8 @@ func TestRow8_InReviewWithoutPRGoesToNeedsAttention(t *testing.T) {
 
 func TestRow9_NeedsAttentionIsNoOp(t *testing.T) {
 	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "Needs Attention")}, nil))
-	if len(got) != 0 {
-		t.Errorf("expected no actions, got %v", got)
+	if diff := cmp.Diff([]Action(nil), got); diff != "" {
+		t.Errorf("expected no actions (-want +got):\n%s", diff)
 	}
 }
 

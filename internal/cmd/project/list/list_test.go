@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/joshuapeters/klanky/internal/config"
 )
 
@@ -59,8 +60,9 @@ func TestRunProjectList_JSON(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
 		t.Fatalf("parse json: %v\n%s", err, out.String())
 	}
-	if len(got) != 1 || got[0]["slug"] != "auth" || got[0]["title"] != "Auth" {
-		t.Errorf("got %v", got)
+	want := []map[string]string{{"slug": "auth", "title": "Auth", "url": "https://x"}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("project list (-want +got):\n%s", diff)
 	}
 }
 
