@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/joshuapeters/klanky/compare/v0.1.0...v0.2.0) (2026-05-02)
+
+
+### Features
+
+* add install.sh for one-line install ([#25](https://github.com/joshuapeters/klanky/issues/25)) ([b5f01a3](https://github.com/joshuapeters/klanky/commit/b5f01a3ec91c48464e0c19771fad96471190feea))
+
 ## [0.1.0](https://github.com/joshuapeters/klanky/compare/v0.0.2...v0.1.0) (2026-05-02)
 
 
