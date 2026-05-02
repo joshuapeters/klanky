@@ -9,75 +9,68 @@ import (
 	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-func TestBuildBreadcrumb_ContainsAllRequiredSections(t *testing.T) {
+func TestBuildBreadcrumb_ContainsAttemptSentinelAndBody(t *testing.T) {
 	got := BuildBreadcrumb(BreadcrumbData{
-		Attempt:      3,
-		StartedAt:    time.Date(2026, 4, 26, 9, 32, 17, 0, time.UTC),
+		Attempt:      2,
+		StartedAt:    time.Date(2026, 5, 2, 10, 0, 0, 0, time.UTC),
 		Duration:     15*time.Minute + 54*time.Second,
-		Outcome:      "agent exited cleanly but no PR was opened on klanky/feat-7/task-42",
-		WorktreePath: "/home/u/.klanky/worktrees/proj/feat-7/task-42",
-		LogPath:      ".klanky/logs/task-42.log",
-		LastLogLines: []string{"line A", "line B", "line C"},
+		Outcome:      "agent timeout after 20m",
+		WorktreePath: "/wt/issue-7",
+		LogPath:      "/log",
+		LastLogLines: []string{"line A", "line B"},
 	})
-
-	wantSubstrs := []string{
-		"<!-- klanky-attempt -->",
-		"Klanky attempt #3 — needs-attention",
-		"2026-04-26",
-		"15m54s",
-		"agent exited cleanly",
-		"/home/u/.klanky/worktrees/proj/feat-7/task-42",
-		".klanky/logs/task-42.log",
+	for _, w := range []string{
+		AttemptSentinel,
+		"attempt #2",
+		"agent timeout after 20m",
+		"`/wt/issue-7`",
 		"line A",
-		"line C",
-	}
-	for _, want := range wantSubstrs {
-		if !strings.Contains(got, want) {
-			t.Errorf("breadcrumb missing %q\n---\n%s", want, got)
+	} {
+		if !strings.Contains(got, w) {
+			t.Errorf("breadcrumb missing %q:\n%s", w, got)
 		}
 	}
 }
 
-func TestCountPriorAttempts_ZeroComments(t *testing.T) {
-	r := gh.NewFakeRunner()
-	r.Stub([]string{"gh", "issue", "view", "42", "--repo", "alice/proj", "--json", "comments"},
-		[]byte(`{"comments":[]}`), nil)
-
-	n, err := CountPriorAttempts(context.Background(), r, "alice/proj", 42)
-	if err != nil {
-		t.Fatal(err)
+func TestBuildReconcileBreadcrumb_HasSentinel(t *testing.T) {
+	got := BuildReconcileBreadcrumb("PR was closed.")
+	if !strings.HasPrefix(got, ReconcileSentinel) {
+		t.Errorf("reconcile breadcrumb missing sentinel: %q", got)
 	}
-	if n != 0 {
-		t.Errorf("count = %d, want 0", n)
+	if !strings.Contains(got, "PR was closed.") {
+		t.Errorf("reconcile breadcrumb missing body")
 	}
 }
 
-func TestCountPriorAttempts_OnlyKlankySentinelCommentsCount(t *testing.T) {
-	r := gh.NewFakeRunner()
-	r.Stub([]string{"gh", "issue", "view", "42", "--repo", "alice/proj", "--json", "comments"},
-		[]byte(`{"comments":[
-			{"body":"<!-- klanky-attempt -->\n**Klanky attempt #1...**"},
-			{"body":"some user comment"},
-			{"body":"<!-- klanky-attempt -->\n**Klanky attempt #2...**"}
-		]}`), nil)
-
-	n, err := CountPriorAttempts(context.Background(), r, "alice/proj", 42)
+func TestCountPriorAttempts(t *testing.T) {
+	fake := gh.NewFakeRunner()
+	body := `{"comments":[
+		{"body":"<!-- klanky-attempt -->\n**Klanky attempt #1**"},
+		{"body":"random comment"},
+		{"body":"<!-- klanky-attempt -->\n**Klanky attempt #2**"},
+		{"body":"<!-- klanky-reconcile -->\nreconcile note"}
+	]}`
+	fake.Stub(
+		[]string{"gh", "issue", "view", "42", "--repo", "o/r", "--json", "comments"},
+		[]byte(body), nil,
+	)
+	got, err := CountPriorAttempts(context.Background(), fake, "o/r", 42)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("CountPriorAttempts: %v", err)
 	}
-	if n != 2 {
-		t.Errorf("count = %d, want 2", n)
+	if got != 2 {
+		t.Errorf("got %d, want 2", got)
 	}
 }
 
-func TestPostBreadcrumb_CallsGhIssueComment(t *testing.T) {
-	r := gh.NewFakeRunner()
-	r.Stub([]string{"gh", "issue", "comment", "42", "--repo", "alice/proj", "--body", "hello"}, nil, nil)
-
-	if err := PostBreadcrumb(context.Background(), r, "alice/proj", 42, "hello"); err != nil {
-		t.Fatal(err)
+func TestTailLines(t *testing.T) {
+	in := "a\nb\nc\nd\ne\n\n"
+	got := TailLines(in, 3)
+	if len(got) != 3 || got[0] != "c" || got[2] != "e" {
+		t.Errorf("TailLines = %v", got)
 	}
-	if len(r.Calls) != 1 {
-		t.Fatalf("expected 1 call, got %d", len(r.Calls))
+	got = TailLines("only one", 5)
+	if len(got) != 1 || got[0] != "only one" {
+		t.Errorf("TailLines short = %v", got)
 	}
 }

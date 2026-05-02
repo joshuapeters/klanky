@@ -5,61 +5,80 @@ import (
 	"testing"
 )
 
-func conformingFields() ProjectFields {
-	return ProjectFields{Fields: []ProjectField{
-		{Name: "Phase", Type: "ProjectV2Field"},
-		{Name: "Status", Type: "ProjectV2SingleSelectField", Options: []ProjectFieldOption{
-			{Name: "Todo"}, {Name: "In Progress"}, {Name: "In Review"},
-			{Name: "Needs Attention"}, {Name: "Done"},
-		}},
-	}}
-}
-
-func TestValidateProject_Conforming_ReturnsNoErrors(t *testing.T) {
-	if errs := ValidateProject(conformingFields()); len(errs) != 0 {
-		t.Errorf("expected no errors, got: %v", errs)
+func TestValidateSlug_Accepts(t *testing.T) {
+	for _, s := range []string{"a", "auth", "auth-2", "billing-v2", "x1", "12-thing"} {
+		if err := ValidateSlug(s); err != nil {
+			t.Errorf("ValidateSlug(%q) = %v, want nil", s, err)
+		}
 	}
 }
 
-func TestValidateProject_MissingPhaseField(t *testing.T) {
-	pf := conformingFields()
-	pf.Fields = pf.Fields[1:]
-	errs := ValidateProject(pf)
-	if len(errs) == 0 {
-		t.Fatal("expected error, got none")
-	}
-	if !strings.Contains(errs[0], "Phase") {
-		t.Errorf("error should mention Phase: %q", errs[0])
+func TestValidateSlug_Rejects(t *testing.T) {
+	for _, s := range []string{"", "Auth", "auth_system", "auth/payment", "auth space"} {
+		if err := ValidateSlug(s); err == nil {
+			t.Errorf("ValidateSlug(%q) = nil, want error", s)
+		}
 	}
 }
 
-func TestValidateProject_PhaseFieldWrongType(t *testing.T) {
-	pf := conformingFields()
-	pf.Fields[0].Type = "ProjectV2SingleSelectField"
-	errs := ValidateProject(pf)
-	if len(errs) == 0 {
-		t.Fatal("expected error, got none")
+func TestDeriveSlug(t *testing.T) {
+	cases := map[string]string{
+		"Auth System":       "auth-system",
+		"  Auth - System ":  "auth-system",
+		"Auth/Payment v2":   "auth-payment-v2",
+		"!!!":               "",
+		"foo___bar":         "foo-bar",
+		"Already-A-Slug":    "already-a-slug",
+	}
+	for in, want := range cases {
+		if got := DeriveSlug(in); got != want {
+			t.Errorf("DeriveSlug(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
-func TestValidateProject_StatusMissingOption(t *testing.T) {
-	pf := conformingFields()
-	pf.Fields[1].Options = pf.Fields[1].Options[:4]
-	errs := ValidateProject(pf)
-	if len(errs) == 0 {
-		t.Fatal("expected error, got none")
+func TestValidateProjectSchema_OK(t *testing.T) {
+	fields := []RawField{
+		{Name: "Title", Type: "ProjectV2Field"},
+		{
+			Name: "Status", Type: "ProjectV2SingleSelectField",
+			Options: []RawFieldOption{
+				{ID: "1", Name: "Todo"},
+				{ID: "2", Name: "In Progress"},
+				{ID: "3", Name: "In Review"},
+				{ID: "4", Name: "Needs Attention"},
+				{ID: "5", Name: "Done"},
+			},
+		},
 	}
+	if errs := ValidateProjectSchema(fields); len(errs) != 0 {
+		t.Errorf("expected no errors, got %v", errs)
+	}
+}
+
+func TestValidateProjectSchema_MissingOption(t *testing.T) {
+	fields := []RawField{
+		{
+			Name: "Status", Type: "ProjectV2SingleSelectField",
+			Options: []RawFieldOption{
+				{ID: "1", Name: "Todo"},
+				{ID: "2", Name: "In Progress"},
+				{ID: "3", Name: "Done"},
+			},
+		},
+	}
+	errs := ValidateProjectSchema(fields)
 	joined := strings.Join(errs, "\n")
-	if !strings.Contains(joined, "Done") {
-		t.Errorf("error should mention missing Done option: %s", joined)
+	for _, want := range []string{"In Review", "Needs Attention"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("expected validation to mention %q; got %v", want, errs)
+		}
 	}
 }
 
-func TestValidateProject_StatusOptionWrongCase(t *testing.T) {
-	pf := conformingFields()
-	pf.Fields[1].Options[0].Name = "todo"
-	errs := ValidateProject(pf)
-	if len(errs) == 0 {
-		t.Fatal("expected error, got none")
+func TestValidateProjectSchema_NoStatusField(t *testing.T) {
+	errs := ValidateProjectSchema([]RawField{{Name: "Title", Type: "ProjectV2Field"}})
+	if len(errs) == 0 || !strings.Contains(errs[0], "Status") {
+		t.Errorf("expected missing-Status error; got %v", errs)
 	}
 }

@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestRootCommand_Help_ListsAllSubcommands(t *testing.T) {
+func TestRootCommand_Help_ListsRegisteredSubcommands(t *testing.T) {
 	out := &bytes.Buffer{}
 	cmd := NewCmdRoot(".klankyrc.json", "dev", "none", "unknown")
 	cmd.SetOut(out)
@@ -14,34 +14,12 @@ func TestRootCommand_Help_ListsAllSubcommands(t *testing.T) {
 	cmd.SetArgs([]string{"--help"})
 
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("expected --help to succeed, got: %v", err)
+		t.Fatalf("--help failed: %v", err)
 	}
-
-	helpText := out.String()
-	for _, want := range []string{"init", "project", "feature", "task", "run", "version"} {
-		if !strings.Contains(helpText, want) {
-			t.Errorf("expected --help to mention %q; got:\n%s", want, helpText)
+	for _, want := range []string{"init", "issue", "project", "run", "version"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("expected --help to mention %q; got:\n%s", want, out.String())
 		}
-	}
-}
-
-func TestRootCommand_Help_IncludesVersion(t *testing.T) {
-	out := &bytes.Buffer{}
-	cmd := NewCmdRoot(".klankyrc.json", "dev", "none", "unknown")
-	cmd.SetOut(out)
-	cmd.SetErr(out)
-	cmd.SetArgs([]string{"--help"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("expected --help to succeed, got: %v", err)
-	}
-
-	helpText := out.String()
-	if !strings.Contains(helpText, "Version:") {
-		t.Errorf("expected --help to contain a 'Version:' line; got:\n%s", helpText)
-	}
-	if !strings.Contains(helpText, "dev") {
-		t.Errorf("expected --help to print version 'dev' (the default); got:\n%s", helpText)
 	}
 }
 
@@ -51,13 +29,10 @@ func TestRootCommand_VersionFlag_PrintsVersion(t *testing.T) {
 	cmd.SetOut(out)
 	cmd.SetErr(out)
 	cmd.SetArgs([]string{"--version"})
-
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("expected --version to succeed, got: %v", err)
+		t.Fatalf("--version failed: %v", err)
 	}
-
-	flagOut := out.String()
-	if !strings.Contains(flagOut, "dev") {
-		t.Errorf("expected --version to print 'dev' (the default); got:\n%s", flagOut)
+	if !strings.Contains(out.String(), "dev") {
+		t.Errorf("expected 'dev' in --version output; got %q", out.String())
 	}
 }

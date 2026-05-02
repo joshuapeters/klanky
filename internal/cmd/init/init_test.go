@@ -3,94 +3,130 @@ package initcmd
 import (
 	"bytes"
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/joshuapeters/klanky/internal/config"
 	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-func TestInit_FullSequence(t *testing.T) {
+func TestRunInit_WithRepoFlag_WritesEmptyConfig(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".klankyrc.json")
 
-	fake := gh.NewFakeRunner()
-
-	// 1. Create project.
-	fake.Stub(
-		[]string{"gh", "project", "create", "--owner", "@me", "--title", "Klanky", "--format", "json"},
-		[]byte(`{"id":"PVT_new","number":7,"url":"https://github.com/users/joshuapeters/projects/7","owner":{"login":"joshuapeters","type":"User"}}`),
-		nil,
-	)
-	// 2. Create Phase field.
-	fake.Stub(
-		[]string{"gh", "project", "field-create", "7",
-			"--owner", "@me", "--name", "Phase", "--data-type", "NUMBER", "--format", "json"},
-		[]byte(`{"id":"PVTF_phase","name":"Phase","type":"ProjectV2Field"}`),
-		nil,
-	)
-	// 3. Field-list to find the default Status field's ID and existing options.
-	fake.Stub(
-		[]string{"gh", "project", "field-list", "7", "--owner", "@me", "--format", "json"},
-		[]byte(`{"fields":[
-			{"id":"PVTSSF_status","name":"Status","type":"ProjectV2SingleSelectField","options":[
-				{"id":"opt_todo","name":"Todo"},
-				{"id":"opt_inp","name":"In Progress"},
-				{"id":"opt_done","name":"Done"}
-			]},
-			{"id":"PVTF_phase","name":"Phase","type":"ProjectV2Field"}
-		]}`), nil,
-	)
-	// 4. Update Status options via GraphQL (preserving existing IDs).
-	expectedMutation := buildUpdateStatusOptionsMutation(map[string]string{
-		"Todo":        "opt_todo",
-		"In Progress": "opt_inp",
-		"Done":        "opt_done",
-	})
-	fake.Stub(
-		[]string{"gh", "api", "graphql",
-			"-f", "query=" + expectedMutation,
-			"-f", "fieldId=PVTSSF_status"},
-		[]byte(`{"data":{"updateProjectV2Field":{"projectV2Field":{"id":"PVTSSF_status","options":[
-			{"id":"opt_todo","name":"Todo"},
-			{"id":"opt_inp","name":"In Progress"},
-			{"id":"new_ir","name":"In Review"},
-			{"id":"new_na","name":"Needs Attention"},
-			{"id":"opt_done","name":"Done"}
-		]}}}}`), nil,
-	)
-	// 5. Create label on the repo.
-	fake.Stub(
-		[]string{"gh", "label", "create", "klanky:feature",
-			"--repo", "joshuapeters/klanky",
-			"--description", "Marks an issue as a Klanky feature (parent of task sub-issues)",
-			"--color", "0E8A16"},
-		[]byte(""), nil,
-	)
-
-	out := &bytes.Buffer{}
-	err := RunInit(context.Background(), fake, Options{
-		Owner:      "@me",
-		Title:      "Klanky",
+	var out bytes.Buffer
+	err := RunInit(context.Background(), gh.NewFakeRunner(), Options{
 		RepoSlug:   "joshuapeters/klanky",
 		ConfigPath: cfgPath,
-	}, out)
+	}, &out)
 	if err != nil {
 		t.Fatalf("RunInit: %v", err)
 	}
 
 	cfg, err := config.LoadConfig(cfgPath)
 	if err != nil {
-		t.Fatalf("config not written: %v", err)
+		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.Project.NodeID != "PVT_new" {
-		t.Errorf("NodeID = %q, want PVT_new", cfg.Project.NodeID)
+	if cfg.SchemaVersion != config.SchemaVersion {
+		t.Errorf("SchemaVersion = %d, want %d", cfg.SchemaVersion, config.SchemaVersion)
 	}
-	if cfg.Project.Fields.Phase.ID != "PVTF_phase" {
-		t.Errorf("Phase ID = %q", cfg.Project.Fields.Phase.ID)
+	if cfg.Repo.Owner != "joshuapeters" || cfg.Repo.Name != "klanky" {
+		t.Errorf("Repo = %+v", cfg.Repo)
 	}
-	if cfg.Project.Fields.Status.Options["In Review"] != "new_ir" {
-		t.Errorf(`Status options["In Review"] = %q, want new_ir`,
-			cfg.Project.Fields.Status.Options["In Review"])
+	if len(cfg.Projects) != 0 {
+		t.Errorf("Projects = %v, want empty", cfg.Projects)
+	}
+	if !strings.Contains(out.String(), "Wrote ") {
+		t.Errorf("expected confirmation line in stdout; got %q", out.String())
+	}
+}
+
+func TestRunInit_RefusesToOverwrite(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".klankyrc.json")
+	if err := os.WriteFile(cfgPath, []byte("{}\n"), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	err := RunInit(context.Background(), gh.NewFakeRunner(), Options{
+		RepoSlug: "o/r", ConfigPath: cfgPath,
+	}, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("want error when config already exists")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("error %q should mention already exists", err)
+	}
+}
+
+func TestRunInit_BadRepoSlug(t *testing.T) {
+	err := RunInit(context.Background(), gh.NewFakeRunner(), Options{
+		RepoSlug: "no-slash", ConfigPath: filepath.Join(t.TempDir(), ".klankyrc.json"),
+	}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "owner/name") {
+		t.Errorf("want owner/name error, got %v", err)
+	}
+}
+
+func TestRunInit_AutoDetectFromGitRemote(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, ".klankyrc.json")
+
+	fake := gh.NewFakeRunner()
+	fake.Stub(
+		[]string{"git", "remote", "get-url", "origin"},
+		[]byte("https://github.com/joshuapeters/klanky.git\n"),
+		nil,
+	)
+	err := RunInit(context.Background(), fake, Options{ConfigPath: cfgPath}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("RunInit: %v", err)
+	}
+	cfg, _ := config.LoadConfig(cfgPath)
+	if cfg.Repo.Owner != "joshuapeters" || cfg.Repo.Name != "klanky" {
+		t.Errorf("Repo = %+v", cfg.Repo)
+	}
+}
+
+func TestRunInit_AutoDetectFails(t *testing.T) {
+	fake := gh.NewFakeRunner()
+	fake.Stub(
+		[]string{"git", "remote", "get-url", "origin"},
+		nil,
+		errors.New("fatal: No such remote 'origin'"),
+	)
+	err := RunInit(context.Background(), fake, Options{
+		ConfigPath: filepath.Join(t.TempDir(), ".klankyrc.json"),
+	}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "--repo") {
+		t.Errorf("want --repo guidance in error, got %v", err)
+	}
+}
+
+func TestParseGitRemote(t *testing.T) {
+	cases := map[string][2]string{
+		"https://github.com/joshuapeters/klanky.git":  {"joshuapeters", "klanky"},
+		"https://github.com/joshuapeters/klanky":      {"joshuapeters", "klanky"},
+		"git@github.com:joshuapeters/klanky.git":      {"joshuapeters", "klanky"},
+		"git@github.com:joshuapeters/klanky":          {"joshuapeters", "klanky"},
+		"ssh://git@github.com/joshuapeters/klanky.git": {"joshuapeters", "klanky"},
+	}
+	for in, want := range cases {
+		o, n, err := parseGitRemote(in)
+		if err != nil {
+			t.Errorf("parseGitRemote(%q) error: %v", in, err)
+			continue
+		}
+		if o != want[0] || n != want[1] {
+			t.Errorf("parseGitRemote(%q) = (%q, %q), want %v", in, o, n, want)
+		}
+	}
+}
+
+func TestParseGitRemote_Unknown(t *testing.T) {
+	if _, _, err := parseGitRemote("https://gitlab.com/x/y.git"); err == nil {
+		t.Error("expected error for non-github URL")
 	}
 }

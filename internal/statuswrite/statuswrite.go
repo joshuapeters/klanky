@@ -1,3 +1,6 @@
+// Package statuswrite mutates a project item's Status single-select field via
+// updateProjectV2ItemFieldValue. Includes simple retry semantics — Status is a
+// best-effort mirror; reconcile catches any drift on the next run.
 package statuswrite
 
 import (
@@ -9,31 +12,33 @@ import (
 	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-// WriteStatus sets the Status single-select field on a project item to the
-// option named statusName. Retries up to 3 times with exponential backoff
-// (1×, 2×, 4× of baseDelay). When baseDelay is 0 it defaults to 1s.
-//
-// Returns an error after exhausting retries; caller logs and continues
-// (status writes are best-effort by design — reconcile fixes any drift).
-func WriteStatus(ctx context.Context, r gh.Runner, cfg *config.Config, itemID, statusName string, baseDelay time.Duration) error {
-	optionID, ok := cfg.Project.Fields.Status.Options[statusName]
+// Mutation is the locked GraphQL mutation. Exported for test stub matching.
+const Mutation = `mutation($pid: ID!, $iid: ID!, $fid: ID!, $oid: String!) {
+  updateProjectV2ItemFieldValue(input: {projectId: $pid, itemId: $iid, fieldId: $fid, value: {singleSelectOptionId: $oid}}) {
+    projectV2Item { id }
+  }
+}`
+
+// Write sets the named Status option on a project item. Retries up to 3 times
+// with exponential backoff (1×, 2×, 4× of baseDelay; baseDelay=0 → 1s).
+// Returns an error after exhaustion; callers log and continue.
+func Write(ctx context.Context, r gh.Runner, p config.Project, itemID, statusName string, baseDelay time.Duration) error {
+	optID, ok := p.Fields.Status.Options[statusName]
 	if !ok {
-		return fmt.Errorf("unknown Status option %q (config has %d options)",
-			statusName, len(cfg.Project.Fields.Status.Options))
+		return fmt.Errorf("unknown Status option %q (config has %d options; re-run `klanky project link`)",
+			statusName, len(p.Fields.Status.Options))
 	}
 	if baseDelay == 0 {
 		baseDelay = time.Second
 	}
+	vars := map[string]any{
+		"pid": p.NodeID, "iid": itemID, "fid": p.Fields.Status.ID, "oid": optID,
+	}
 
-	var lastErr error
 	delay := baseDelay
+	var lastErr error
 	for attempt := 1; attempt <= 3; attempt++ {
-		_, err := r.Run(ctx, "gh", "project", "item-edit",
-			"--id", itemID,
-			"--field-id", cfg.Project.Fields.Status.ID,
-			"--project-id", cfg.Project.NodeID,
-			"--single-select-option-id", optionID,
-		)
+		err := gh.RunGraphQL(ctx, r, Mutation, vars, nil)
 		if err == nil {
 			return nil
 		}

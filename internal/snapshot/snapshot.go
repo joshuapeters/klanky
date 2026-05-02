@@ -1,3 +1,7 @@
+// Package snapshot fetches a one-shot read of a project's tracked issues, their
+// dependencies, and the open/closed PRs on klanky-named branches. The runner
+// uses this snapshot for the entire pass; status writes during the run mutate
+// GitHub directly and the snapshot is not refreshed.
 package snapshot
 
 import (
@@ -9,69 +13,68 @@ import (
 	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-// Snapshot is the read-only view of a feature's state at the start of a run.
-// Status writes during the run mutate GitHub directly; Snapshot is not updated.
+// MaxIssuesPerProject is the hard cap on tracked issues in a project. Beyond
+// this, the runner errors out — paginating GraphQL is deferred for v1.
+const MaxIssuesPerProject = 100
+
+// MaxBlockedByPerIssue is the hard cap on blockedBy edges per issue. Spec calls
+// it out at 50 with a hard error if exceeded.
+const MaxBlockedByPerIssue = 50
+
+// Snapshot is the read-only view a single `klanky run` operates on.
 type Snapshot struct {
-	Feature     FeatureInfo
-	Tasks       []TaskInfo
-	PRsByBranch map[string]PRInfo
+	ProjectSlug string
+	Issues      []Issue
+	PRsByBranch map[string]PR
 }
 
-type FeatureInfo struct {
+// Issue is one tracked issue with its dependency edges and current Status.
+type Issue struct {
+	Number    int
+	Title     string
+	Body      string
+	State     string // "OPEN" / "CLOSED"
+	ItemID    string // ProjectV2 item ID
+	Status    string // Status field option name; "" if unset
+	BlockedBy []Blocker
+}
+
+// Blocker is one BLOCKED_BY edge. Repo is the predecessor's "owner/name" — may
+// differ from this repo (cross-repo blockers count for eligibility).
+type Blocker struct {
 	Number int
-	Title  string
+	State  string // "OPEN" / "CLOSED"
+	Repo   string
 }
 
-type TaskInfo struct {
-	Number int
-	Title  string
-	Body   string
-	State  string // "OPEN" or "CLOSED"
-	NodeID string
-	ItemID string // project item ID (filtered to our project node)
-	Phase  *int   // nil when not set on the project item
-	Status string // "Todo" / "In Progress" / "In Review" / "Needs Attention" / "Done" / "" if unset
-}
-
-// PRInfo is the subset of PR fields the runner consults. State carries the
-// merge/close information ("OPEN" / "CLOSED" / "MERGED"); explicit Closed and
-// Merged booleans were removed because (a) State subsumes them and (b) recent
-// `gh pr list --json` doesn't expose `merged`, only `mergedAt`.
-type PRInfo struct {
+// PR is the subset of PR fields the runner consults.
+type PR struct {
 	Number      int    `json:"number"`
 	URL         string `json:"url"`
-	State       string `json:"state"`
+	State       string `json:"state"` // OPEN/CLOSED/MERGED
 	HeadRefName string `json:"headRefName"`
 }
 
-const SnapshotQuery = `query($owner: String!, $repo: String!, $number: Int!) {
-  repository(owner: $owner, name: $repo) {
-    issue(number: $number) {
-      number
-      title
-      subIssues(first: 100) {
+// SnapshotQuery is the locked GraphQL document. Listed verbatim in
+// project_runner_design.md (with `body` added so the envelope can include it).
+const SnapshotQuery = `query($pid: ID!) {
+  node(id: $pid) {
+    ... on ProjectV2 {
+      items(first: 100, query: "label:klanky:tracked") {
         nodes {
-          number
-          title
-          body
-          state
           id
-          projectItems(first: 5) {
+          content {
+            ... on Issue {
+              number title state body
+              labels(first: 10) { nodes { name } }
+              blockedBy(first: 50) { nodes { number state repository { nameWithOwner } } }
+            }
+          }
+          fieldValues(first: 20) {
             nodes {
-              id
-              project { id }
-              fieldValues(first: 20) {
-                nodes {
-                  ... on ProjectV2ItemFieldNumberValue {
-                    field { ... on ProjectV2Field { name } }
-                    number
-                  }
-                  ... on ProjectV2ItemFieldSingleSelectValue {
-                    field { ... on ProjectV2SingleSelectField { name } }
-                    name
-                    optionId
-                  }
-                }
+              ... on ProjectV2ItemFieldSingleSelectValue {
+                name
+                field { ... on ProjectV2SingleSelectField { name } }
               }
             }
           }
@@ -81,122 +84,133 @@ const SnapshotQuery = `query($owner: String!, $repo: String!, $number: Int!) {
   }
 }`
 
-// FetchSnapshot makes one GraphQL call for tasks+fields and one PR list call,
-// then returns a populated Snapshot. The PR list filters to klanky-pattern
-// branches under this feature.
-func FetchSnapshot(ctx context.Context, r gh.Runner, cfg *config.Config, featureID int) (*Snapshot, error) {
-	var gqlResp struct {
-		Repository struct {
-			Issue struct {
-				Number    int    `json:"number"`
-				Title     string `json:"title"`
-				SubIssues struct {
-					Nodes []struct {
-						Number       int    `json:"number"`
-						Title        string `json:"title"`
-						Body         string `json:"body"`
-						State        string `json:"state"`
-						ID           string `json:"id"`
-						ProjectItems struct {
-							Nodes []struct {
-								ID      string `json:"id"`
-								Project struct {
-									ID string `json:"id"`
-								} `json:"project"`
-								FieldValues struct {
-									Nodes []struct {
-										Field struct {
-											Name string `json:"name"`
-										} `json:"field"`
-										Number   *float64 `json:"number,omitempty"`
-										Name     string   `json:"name,omitempty"`
-										OptionID string   `json:"optionId,omitempty"`
-									} `json:"nodes"`
-								} `json:"fieldValues"`
-							} `json:"nodes"`
-						} `json:"projectItems"`
-					} `json:"nodes"`
-				} `json:"subIssues"`
-			} `json:"issue"`
-		} `json:"repository"`
+// Fetch performs the GraphQL items query and the PR list, returning a populated
+// Snapshot. Issues that come back without the klanky:tracked label (a parser
+// quirk in the GraphQL filter) are dropped with no error. Issues with deleted
+// repository fields on a blocker are reported on stderrLog.
+func Fetch(ctx context.Context, r gh.Runner, cfg *config.Config, slug string, stderrLog func(format string, a ...any)) (*Snapshot, error) {
+	p, ok := cfg.Projects[slug]
+	if !ok {
+		return nil, fmt.Errorf("no project with slug %q in config", slug)
 	}
 
-	if err := gh.RunGraphQL(ctx, r, SnapshotQuery, map[string]any{
-		"owner":  cfg.Repo.Owner,
-		"repo":   cfg.Repo.Name,
-		"number": featureID,
-	}, &gqlResp); err != nil {
-		return nil, fmt.Errorf("fetch feature snapshot: %w", err)
+	type rawIssue struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		State  string `json:"state"`
+		Body   string `json:"body"`
+		Labels struct {
+			Nodes []struct {
+				Name string `json:"name"`
+			} `json:"nodes"`
+		} `json:"labels"`
+		BlockedBy struct {
+			Nodes []struct {
+				Number     int    `json:"number"`
+				State      string `json:"state"`
+				Repository struct {
+					NameWithOwner string `json:"nameWithOwner"`
+				} `json:"repository"`
+			} `json:"nodes"`
+		} `json:"blockedBy"`
+	}
+	type rawFieldValue struct {
+		Name  string `json:"name"`
+		Field struct {
+			Name string `json:"name"`
+		} `json:"field"`
+	}
+	var resp struct {
+		Node struct {
+			Items struct {
+				Nodes []struct {
+					ID          string   `json:"id"`
+					Content     rawIssue `json:"content"`
+					FieldValues struct {
+						Nodes []rawFieldValue `json:"nodes"`
+					} `json:"fieldValues"`
+				} `json:"nodes"`
+			} `json:"items"`
+		} `json:"node"`
+	}
+	if err := gh.RunGraphQL(ctx, r, SnapshotQuery, map[string]any{"pid": p.NodeID}, &resp); err != nil {
+		return nil, fmt.Errorf("fetch project items: %w", err)
+	}
+	if len(resp.Node.Items.Nodes) >= MaxIssuesPerProject {
+		return nil, fmt.Errorf("project %q has %d+ tracked issues; v1 hard-caps at %d (paginate later)",
+			slug, len(resp.Node.Items.Nodes), MaxIssuesPerProject)
 	}
 
-	feature := FeatureInfo{
-		Number: gqlResp.Repository.Issue.Number,
-		Title:  gqlResp.Repository.Issue.Title,
-	}
-	if feature.Number == 0 {
-		return nil, fmt.Errorf("feature #%d not found in %s/%s", featureID, cfg.Repo.Owner, cfg.Repo.Name)
-	}
-
-	tasks := make([]TaskInfo, 0, len(gqlResp.Repository.Issue.SubIssues.Nodes))
-	for _, n := range gqlResp.Repository.Issue.SubIssues.Nodes {
-		ti := TaskInfo{
-			Number: n.Number,
-			Title:  n.Title,
-			Body:   n.Body,
-			State:  n.State,
-			NodeID: n.ID,
-		}
-		// Find the project item belonging to OUR project (filter by node ID).
-		for _, pi := range n.ProjectItems.Nodes {
-			if pi.Project.ID != cfg.Project.NodeID {
-				continue
+	issues := make([]Issue, 0, len(resp.Node.Items.Nodes))
+	for _, n := range resp.Node.Items.Nodes {
+		// Defensive label re-check; the GraphQL filter is opaque.
+		tracked := false
+		for _, l := range n.Content.Labels.Nodes {
+			if l.Name == config.LabelTracked {
+				tracked = true
+				break
 			}
-			ti.ItemID = pi.ID
-			for _, fv := range pi.FieldValues.Nodes {
-				switch fv.Field.Name {
-				case config.FieldNamePhase:
-					if fv.Number != nil {
-						p := int(*fv.Number)
-						ti.Phase = &p
-					}
-				case config.FieldNameStatus:
-					ti.Status = fv.Name
-				}
-			}
-			break
 		}
-		tasks = append(tasks, ti)
+		if !tracked {
+			continue
+		}
+		if len(n.Content.BlockedBy.Nodes) >= MaxBlockedByPerIssue {
+			return nil, fmt.Errorf("issue #%d has %d+ blockedBy edges; v1 hard-caps at %d",
+				n.Content.Number, len(n.Content.BlockedBy.Nodes), MaxBlockedByPerIssue)
+		}
+		blockers := make([]Blocker, 0, len(n.Content.BlockedBy.Nodes))
+		for _, b := range n.Content.BlockedBy.Nodes {
+			if b.Repository.NameWithOwner == "" && stderrLog != nil {
+				stderrLog("warn: issue #%d references a blocker (#%d) whose repository is missing — treating as permanently blocked\n", n.Content.Number, b.Number)
+			}
+			blockers = append(blockers, Blocker{Number: b.Number, State: b.State, Repo: b.Repository.NameWithOwner})
+		}
+		status := ""
+		for _, fv := range n.FieldValues.Nodes {
+			if fv.Field.Name == config.StatusFieldName {
+				status = fv.Name
+				break
+			}
+		}
+		issues = append(issues, Issue{
+			Number: n.Content.Number, Title: n.Content.Title,
+			Body: n.Content.Body, State: n.Content.State,
+			ItemID: n.ID, Status: status, BlockedBy: blockers,
+		})
 	}
 
-	prSlug := cfg.Repo.Owner + "/" + cfg.Repo.Name
-	prSearch := fmt.Sprintf("head:klanky/feat-%d/", featureID)
-	prOut, err := r.Run(ctx, "gh", "pr", "list",
-		"--repo", prSlug,
+	prs, err := fetchPRs(ctx, r, cfg.Repo.Slug(), slug)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Snapshot{ProjectSlug: slug, Issues: issues, PRsByBranch: prs}, nil
+}
+
+func fetchPRs(ctx context.Context, r gh.Runner, repoSlug, projectSlug string) (map[string]PR, error) {
+	out, err := r.Run(ctx, "gh", "pr", "list",
+		"--repo", repoSlug,
 		"--state", "all",
-		"--search", prSearch,
+		"--search", "head:klanky/"+projectSlug+"/",
 		"--json", "headRefName,number,url,state",
 		"--limit", "200",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fetch PR list: %w", err)
 	}
-	var prs []PRInfo
-	if err := json.Unmarshal(prOut, &prs); err != nil {
+	var prs []PR
+	if err := json.Unmarshal(out, &prs); err != nil {
 		return nil, fmt.Errorf("parse PR list: %w", err)
 	}
-	prsByBranch := make(map[string]PRInfo, len(prs))
+	idx := make(map[string]PR, len(prs))
 	for _, pr := range prs {
-		prsByBranch[pr.HeadRefName] = pr
+		idx[pr.HeadRefName] = pr
 	}
-
-	return &Snapshot{
-		Feature:     feature,
-		Tasks:       tasks,
-		PRsByBranch: prsByBranch,
-	}, nil
+	return idx, nil
 }
 
-// BranchForTask returns the branch name for a (feature, task) pair.
-func BranchForTask(featureID, taskNumber int) string {
-	return fmt.Sprintf("klanky/feat-%d/task-%d", featureID, taskNumber)
+// BranchForIssue returns the klanky branch name for a (project slug, issue
+// number) pair.
+func BranchForIssue(projectSlug string, issueNumber int) string {
+	return fmt.Sprintf("klanky/%s/issue-%d", projectSlug, issueNumber)
 }

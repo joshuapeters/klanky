@@ -11,23 +11,16 @@ import (
 	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-// AttemptSentinel marks a comment posted by the runner as the breadcrumb from
-// one *agent attempt* (success-or-fail). CountPriorAttempts uses it to derive
-// the attempt counter shown in the summary.
+// AttemptSentinel marks a breadcrumb posted at the end of an agent attempt
+// (success-or-fail). CountPriorAttempts uses this to derive the attempt
+// number for the next run's breadcrumb.
 const AttemptSentinel = "<!-- klanky-attempt -->"
 
-// ReconcileSentinel marks a comment posted by the reconcile pass — e.g. "PR
-// was closed without merging" or "Status was Done but issue is open." Distinct
-// from the attempt sentinel so reconcile breadcrumbs don't inflate the
-// agent-attempt count.
+// ReconcileSentinel marks a breadcrumb posted by the reconcile pass — e.g.
+// "PR was closed without merging" or "Status was Done but issue is open."
+// Distinct from AttemptSentinel so reconcile breadcrumbs don't inflate the
+// attempt counter.
 const ReconcileSentinel = "<!-- klanky-reconcile -->"
-
-// BuildReconcileBreadcrumb formats a reconcile-pass comment body around the
-// given freeform text. Used by the run orchestrator when reconcile mutations
-// need to leave a trail on the issue.
-func BuildReconcileBreadcrumb(text string) string {
-	return fmt.Sprintf("%s\n**Klanky reconcile**\n\n%s\n", ReconcileSentinel, text)
-}
 
 // BreadcrumbData is the substitution input for BuildBreadcrumb.
 type BreadcrumbData struct {
@@ -41,8 +34,7 @@ type BreadcrumbData struct {
 }
 
 // BuildBreadcrumb returns the markdown body of a needs-attention comment.
-// Format is locked in project_runner_design.md and uses the
-// `<!-- klanky-attempt -->` sentinel as the count anchor.
+// Format is locked in project_runner_design.md.
 func BuildBreadcrumb(d BreadcrumbData) string {
 	var b strings.Builder
 	fmt.Fprintln(&b, AttemptSentinel)
@@ -61,11 +53,16 @@ func BuildBreadcrumb(d BreadcrumbData) string {
 	return b.String()
 }
 
+// BuildReconcileBreadcrumb wraps a freeform reconcile message in the
+// reconcile sentinel + heading.
+func BuildReconcileBreadcrumb(text string) string {
+	return fmt.Sprintf("%s\n**Klanky reconcile**\n\n%s\n", ReconcileSentinel, text)
+}
+
 // CountPriorAttempts returns the number of comments on the issue whose body
-// starts with the klanky-attempt sentinel. The next attempt's number is
-// returned-value + 1.
-func CountPriorAttempts(ctx context.Context, r gh.Runner, repoSlug string, taskNumber int) (int, error) {
-	out, err := r.Run(ctx, "gh", "issue", "view", strconv.Itoa(taskNumber),
+// starts with the AttemptSentinel. The next attempt's number is +1.
+func CountPriorAttempts(ctx context.Context, r gh.Runner, repoSlug string, issueNumber int) (int, error) {
+	out, err := r.Run(ctx, "gh", "issue", "view", strconv.Itoa(issueNumber),
 		"--repo", repoSlug, "--json", "comments")
 	if err != nil {
 		return 0, fmt.Errorf("gh issue view: %w", err)
@@ -87,17 +84,17 @@ func CountPriorAttempts(ctx context.Context, r gh.Runner, repoSlug string, taskN
 	return count, nil
 }
 
-// PostBreadcrumb posts a comment with the given body on the task issue.
-func PostBreadcrumb(ctx context.Context, r gh.Runner, repoSlug string, taskNumber int, body string) error {
-	if _, err := r.Run(ctx, "gh", "issue", "comment", strconv.Itoa(taskNumber),
+// PostBreadcrumb posts a comment with the given body on the issue.
+func PostBreadcrumb(ctx context.Context, r gh.Runner, repoSlug string, issueNumber int, body string) error {
+	if _, err := r.Run(ctx, "gh", "issue", "comment", strconv.Itoa(issueNumber),
 		"--repo", repoSlug, "--body", body); err != nil {
 		return fmt.Errorf("gh issue comment: %w", err)
 	}
 	return nil
 }
 
-// TailLines returns the last n lines of a string. If the string has fewer
-// than n lines, returns all of them. Trailing empty lines are dropped.
+// TailLines returns the last n lines of s. Trailing empty lines are dropped.
+// If s has <= n non-empty lines, returns all of them.
 func TailLines(s string, n int) []string {
 	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
 	if len(lines) <= n {

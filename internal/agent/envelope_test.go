@@ -5,48 +5,40 @@ import (
 	"testing"
 )
 
-func TestBuildEnvelope_SubstitutesTaskFields(t *testing.T) {
+func TestBuildEnvelope_ContainsContract(t *testing.T) {
 	got := BuildEnvelope(EnvelopeData{
-		FeatureID:    7,
-		TaskNumber:   42,
-		TaskTitle:    "Add login form",
-		TaskBody:     "## Context\nWe need login.",
-		WorktreePath: "/home/u/.klanky/worktrees/proj/feat-7/task-42",
+		IssueNumber:  42,
+		IssueTitle:   "Refactor login",
+		IssueBody:    "make it work",
+		ProjectSlug:  "auth",
+		WorktreePath: "/tmp/wt",
 	})
-
-	wantSubstrs := []string{
-		"task #42: Add login form",
-		"branch `klanky/feat-7/task-42`",
-		"branched from `main`",
-		"/home/u/.klanky/worktrees/proj/feat-7/task-42",
-		"## Context\nWe need login.",
-		"gh pr create --base main",
-		"Closes #42",
-		"`.github/pull_request_template.md`",
-		"`.github/PULL_REQUEST_TEMPLATE/`",
-		"CLAUDE.md",
-		"comment on issue #42",
-		"prior comments from previous attempts",
-		"Test-Driven Development",
-		"raw.githubusercontent.com/mattpocock/skills/main/tdd/SKILL.md",
-		"lint and test",
-		"Do not push to any branch other than `klanky/feat-7/task-42`",
-		"Do not merge any PR",
+	wants := []string{
+		"You are working on issue #42 in project `auth`: Refactor login",
+		"git worktree at /tmp/wt",
+		"branch `klanky/auth/issue-42`",
+		"# Issue\n\nmake it work",
+		"`Closes #42`",
+		"on issue #42 explaining",
+		"If issue #42 has prior comments",
+		"any branch other than `klanky/auth/issue-42`",
+		"https://raw.githubusercontent.com/mattpocock/skills/main/tdd/SKILL.md",
 	}
-	for _, want := range wantSubstrs {
-		if !strings.Contains(got, want) {
-			t.Errorf("envelope missing substring %q", want)
+	for _, w := range wants {
+		if !strings.Contains(got, w) {
+			t.Errorf("envelope missing %q\nfull text:\n%s", w, got)
 		}
 	}
 }
 
-func TestBuildEnvelope_BodyPlacedVerbatim(t *testing.T) {
-	body := "## Context\nFoo\n\n## Acceptance criteria\n- [ ] Bar\n\n## Out of scope\nBaz"
+func TestBuildEnvelope_DoesNotMentionV1Vocabulary(t *testing.T) {
 	got := BuildEnvelope(EnvelopeData{
-		FeatureID: 1, TaskNumber: 1, TaskTitle: "T",
-		TaskBody: body, WorktreePath: "/wt",
+		IssueNumber: 1, IssueTitle: "x", IssueBody: "y",
+		ProjectSlug: "auth", WorktreePath: "/wt",
 	})
-	if !strings.Contains(got, body) {
-		t.Errorf("body not placed verbatim; envelope:\n%s", got)
+	for _, banned := range []string{"feat-1", "task-", "feature ", "Phase"} {
+		if strings.Contains(got, banned) {
+			t.Errorf("envelope leaks v1 vocabulary %q:\n%s", banned, got)
+		}
 	}
 }
