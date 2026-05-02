@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.1](https://github.com/joshuapeters/klanky/compare/v0.2.0...v0.2.1) (2026-05-02)
+
+
+### Features
+
+* bundle agent skills (klanky-init, klanky-project, klanky-plan) ([#27](https://github.com/joshuapeters/klanky/issues/27)) ([451baee](https://github.com/joshuapeters/klanky/commit/451baeec5d0ce0ad50ddc41dde062dc61673301e))
+
+
+### Bug Fixes
+
+* **project new:** patch Status field options instead of erroring ([#30](https://github.com/joshuapeters/klanky/issues/30)) ([b810f96](https://github.com/joshuapeters/klanky/commit/b810f962e210a68d3b3658598078fb43309eed08)), closes [#29](https://github.com/joshuapeters/klanky/issues/29)
+
 ## [0.2.0](https://github.com/joshuapeters/klanky/compare/v0.1.0...v0.2.0) (2026-05-02)
 
 
