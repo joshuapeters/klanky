@@ -1,8 +1,9 @@
 // Package new implements `klanky project new --slug X --title Y`. It creates a
 // fresh Projects v2 board (linking it to this repo) and registers it in
-// .klankyrc.json under the given slug. The Status single-select field is
-// auto-created by GitHub with the five required options; we only need to
-// fetch the field's resolved IDs and persist the name→optionId map.
+// .klankyrc.json under the given slug. GitHub's createProjectV2 only seeds the
+// Status field with three options (Todo / In Progress / Done); we patch in the
+// remaining two (In Review, Needs Attention) before persisting the resolved
+// option IDs.
 package newcmd
 
 import (
@@ -84,7 +85,14 @@ func RunProjectNew(ctx context.Context, r gh.Runner, opts Options, out io.Writer
 		return fmt.Errorf("fetch auto-created Status field: %w", err)
 	}
 	if missing := missingStatusOptions(statusField.Options); len(missing) > 0 {
-		return fmt.Errorf("auto-created Status field is missing options %v — GitHub schema may have changed", missing)
+		patched, err := patchStatusFieldOptions(ctx, r, statusField.ID)
+		if err != nil {
+			return fmt.Errorf("add missing Status options %v: %w", missing, err)
+		}
+		statusField = patched
+		if still := missingStatusOptions(statusField.Options); len(still) > 0 {
+			return fmt.Errorf("Status field still missing options %v after patch", still)
+		}
 	}
 
 	if err := ghx.EnsureTrackedLabel(ctx, r, cfg.Repo.Slug()); err != nil {
@@ -240,6 +248,48 @@ func fetchStatusField(ctx context.Context, r gh.Runner, projectID string) (*stat
 		return nil, fmt.Errorf("project has no Status single-select field")
 	}
 	out := resp.Node.Field
+	return &out, nil
+}
+
+// patchStatusOptionsMutation rewrites the Status field's singleSelectOptions to
+// klanky's canonical 5. New IDs are minted for every option, including the
+// three GitHub auto-created. That's safe here because `klanky project new`
+// runs immediately after createProjectV2, before any items reference an
+// option ID.
+const patchStatusOptionsMutation = `mutation($fieldId: ID!) {
+  updateProjectV2Field(input: {
+    fieldId: $fieldId
+    singleSelectOptions: [
+      {name: "Todo", color: GRAY, description: ""},
+      {name: "In Progress", color: YELLOW, description: ""},
+      {name: "In Review", color: BLUE, description: ""},
+      {name: "Needs Attention", color: RED, description: ""},
+      {name: "Done", color: GREEN, description: ""}
+    ]
+  }) {
+    projectV2Field {
+      ... on ProjectV2SingleSelectField {
+        id
+        name
+        options { id name }
+      }
+    }
+  }
+}`
+
+func patchStatusFieldOptions(ctx context.Context, r gh.Runner, fieldID string) (*statusField, error) {
+	var resp struct {
+		UpdateProjectV2Field struct {
+			ProjectV2Field statusField `json:"projectV2Field"`
+		} `json:"updateProjectV2Field"`
+	}
+	if err := gh.RunGraphQL(ctx, r, patchStatusOptionsMutation, map[string]any{"fieldId": fieldID}, &resp); err != nil {
+		return nil, err
+	}
+	if resp.UpdateProjectV2Field.ProjectV2Field.ID == "" {
+		return nil, fmt.Errorf("updateProjectV2Field returned empty field")
+	}
+	out := resp.UpdateProjectV2Field.ProjectV2Field
 	return &out, nil
 }
 

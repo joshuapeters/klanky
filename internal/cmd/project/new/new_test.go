@@ -171,6 +171,79 @@ func TestRunProjectNew_HappyPath_AtMe(t *testing.T) {
 	}
 }
 
+func TestRunProjectNew_PatchesStatusWhenGitHubAutoCreatesOnly3Options(t *testing.T) {
+	// GitHub's createProjectV2 only auto-seeds Todo / In Progress / Done. klanky
+	// must add the remaining two options itself rather than rejecting the
+	// just-created project (which would orphan the board on GitHub).
+	cfgPath := seedConfig(t)
+
+	fake := gh.NewFakeRunner()
+	stubViewer(fake, "joshuapeters", "U_owner")
+	stubRepoID(fake, "joshuapeters", "klanky", "R_repo")
+	stubCreate(fake, "U_owner", "Auth", "R_repo",
+		"PVT_new", 12, "https://github.com/users/joshuapeters/projects/12")
+	fake.Stub(
+		[]string{"gh", "api", "graphql",
+			"-f", "query=" + statusFieldQuery,
+			"-f", "pid=PVT_new"},
+		[]byte(`{"data":{"node":{"field":{
+			"id":"PVTSSF_status",
+			"name":"Status",
+			"options":[
+				{"id":"old_todo","name":"Todo"},
+				{"id":"old_inp","name":"In Progress"},
+				{"id":"old_done","name":"Done"}
+			]
+		}}}}`),
+		nil,
+	)
+	fake.Stub(
+		[]string{"gh", "api", "graphql",
+			"-f", "query=" + patchStatusOptionsMutation,
+			"-f", "fieldId=PVTSSF_status"},
+		[]byte(`{"data":{"updateProjectV2Field":{"projectV2Field":{
+			"id":"PVTSSF_status",
+			"name":"Status",
+			"options":[
+				{"id":"new_todo","name":"Todo"},
+				{"id":"new_inp","name":"In Progress"},
+				{"id":"new_inr","name":"In Review"},
+				{"id":"new_na","name":"Needs Attention"},
+				{"id":"new_done","name":"Done"}
+			]
+		}}}}`),
+		nil,
+	)
+	stubLabelMissing(fake, "joshuapeters/klanky")
+
+	err := RunProjectNew(context.Background(), fake, Options{
+		Slug: "auth", Title: "Auth", Owner: "@me", ConfigPath: cfgPath,
+	}, &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("RunProjectNew: %v", err)
+	}
+
+	cfg, err := config.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	p, ok := cfg.Projects["auth"]
+	if !ok {
+		t.Fatalf("expected slug 'auth' in config, got %v", cfg.Projects)
+	}
+	for _, want := range config.StatusOptions {
+		if _, ok := p.Fields.Status.Options[want]; !ok {
+			t.Errorf("Status options missing %q (got %v)", want, p.Fields.Status.Options)
+		}
+	}
+	if got := p.Fields.Status.Options["In Review"]; got != "new_inr" {
+		t.Errorf("Status options[In Review] = %q (want new_inr)", got)
+	}
+	if got := p.Fields.Status.Options["Needs Attention"]; got != "new_na" {
+		t.Errorf("Status options[Needs Attention] = %q (want new_na)", got)
+	}
+}
+
 func TestRunProjectNew_RejectsDuplicateSlug(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, ".klankyrc.json")
