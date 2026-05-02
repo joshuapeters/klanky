@@ -75,6 +75,25 @@ Run all commands from the root of the repo you want Klanky to manage. Per-repo s
 
 For machine-readable output, pass `--output json` (or set `default_output: json` in `.klankyrc.json`) to any stdout-emitting command.
 
+## Skills
+
+Klanky ships agent skills that teach an AI coding agent how to use it.
+They live under [`skills/`](skills/) in this repo and install in any
+consumer repo via the open agent-skills CLI:
+
+```
+npx skills add joshuapeters/klanky
+```
+
+Three skills are bundled:
+
+- `klanky-init` — bootstrap klanky in a fresh repo (one-time).
+- `klanky-project` — create, link, and inspect klanky projects.
+- `klanky-plan` — plan a workstream as a sized, dep'd klanky issue DAG.
+
+These are for agents working *with* klanky in consumer repos. See
+[`skills/README.md`](skills/README.md) for details.
+
 ## Contributing
 
 PRs welcome. Conventions:
