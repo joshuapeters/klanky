@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.1.0](https://github.com/joshuapeters/klanky/compare/v0.0.2...v0.1.0) (2026-05-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* removes the `feature` and `task` command trees and the phase-based execution model. Projects must now be created/linked via `klanky project new|link`, work is added via `klanky issue add`, and the runner is invoked as `klanky run --project <slug>` with ordering derived from GitHub-native issue dependencies. Existing `.klankyrc.json` files from 0.0.x are not compatible and need to be re-initialized.
+
+### Features
+
+* rewrite around multi-project model with issue-DAG over Projects v2 ([#23](https://github.com/joshuapeters/klanky/issues/23)) ([f55d344](https://github.com/joshuapeters/klanky/commit/f55d344ec2661808a10355c3cb6f0fe535fb69c1))
+
 ## [0.0.2](https://github.com/joshuapeters/klanky/compare/v0.0.1...v0.0.2) (2026-05-01)
 
 
