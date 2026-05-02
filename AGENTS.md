@@ -35,15 +35,17 @@ differ per-machine, it belongs under `~/.klanky/`.
 ## `skills/` is the published consumer bundle
 
 The `skills/` directory at the repo root contains agent skills that ship
-to *consumer* repos via `npx skills add joshuapeters/klanky`. Their
-audience is agents using klanky against arbitrary repos, not contributors
-working on klanky itself.
+to any repo (including this one) via `npx skills add joshuapeters/klanky`.
+The audience is agents *using* klanky as a tool — which includes agents
+hacking on klanky's own source, since klanky is dogfooded here.
 
-When editing files in `skills/`, treat the audience accordingly:
+When editing files in `skills/`, the content is *user-facing*, not
+contributor-facing:
 
-- Assume the agent has zero prior context for klanky beyond the README
-  and the skill it's reading.
+- Assume the reader has zero prior context for klanky beyond the README
+  and the skill they're reading.
 - Don't reference klanky's source code, internal packages, or
-  contributor conventions — they aren't visible to a consumer-side agent.
+  contributor conventions — those belong in this file (`AGENTS.md`) or
+  inline in the source, not in skills that ship to other repos too.
 - Keep each skill self-contained. Skills are not loaded as a chain;
   any prerequisite knowledge has to live in the skill that needs it.

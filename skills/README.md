@@ -19,6 +19,7 @@ npx skills add joshuapeters/klanky
 
 ## Audience
 
-These skills are for agents working *with* klanky in consumer repos — not
-for agents hacking on klanky's own source. Klanky must already be installed
-and on `PATH`; see the top-level README for install instructions.
+These skills teach an agent how to *use* klanky in any repo where it's
+installed — including klanky's own source repo, which is dogfooded with
+klanky. Klanky must already be on `PATH`; see the top-level README for
+install instructions.
