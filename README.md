@@ -22,12 +22,8 @@ AI coding tools tend toward two extremes: one interactive agent at a time, or on
 
 ### From a release (recommended)
 
-Download the appropriate tarball for your platform from the [releases page](https://github.com/joshuapeters/klanky/releases), extract it, and put the `klanky` binary on your `PATH`:
-
 ```bash
-# Replace VERSION, OS (darwin|linux), and ARCH (amd64|arm64) for your platform.
-curl -L "https://github.com/joshuapeters/klanky/releases/download/vVERSION/klanky_VERSION_OS_ARCH.tar.gz" \
-  | tar -xz -C /usr/local/bin klanky
+curl -fsSL https://raw.githubusercontent.com/joshuapeters/klanky/main/install.sh | bash
 ```
 
 Verify with `klanky version`.
