@@ -31,3 +31,19 @@ no inter-machine meaning and would only clutter the repo.
 When in doubt: if a piece of state would be identical across every
 checkout of this repo, it belongs in the repo. If it'd legitimately
 differ per-machine, it belongs under `~/.klanky/`.
+
+## `skills/` is the published consumer bundle
+
+The `skills/` directory at the repo root contains agent skills that ship
+to *consumer* repos via `npx skills add joshuapeters/klanky`. Their
+audience is agents using klanky against arbitrary repos, not contributors
+working on klanky itself.
+
+When editing files in `skills/`, treat the audience accordingly:
+
+- Assume the agent has zero prior context for klanky beyond the README
+  and the skill it's reading.
+- Don't reference klanky's source code, internal packages, or
+  contributor conventions — they aren't visible to a consumer-side agent.
+- Keep each skill self-contained. Skills are not loaded as a chain;
+  any prerequisite knowledge has to live in the skill that needs it.
