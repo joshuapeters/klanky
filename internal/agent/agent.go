@@ -45,6 +45,7 @@ type Job struct {
 	IssueNumber  int
 	IssueTitle   string
 	IssueBody    string
+	Branch       string
 	WorktreePath string
 	LogPath      string
 	RepoSlug     string // owner/name
@@ -129,6 +130,7 @@ func RunAgent(ctx context.Context, r gh.Runner, sp Spawner, job Job) (*Result, e
 		IssueTitle:   job.IssueTitle,
 		IssueBody:    job.IssueBody,
 		ProjectSlug:  job.ProjectSlug,
+		Branch:       job.Branch,
 		WorktreePath: job.WorktreePath,
 	})
 
@@ -169,7 +171,7 @@ func RunAgent(ctx context.Context, r gh.Runner, sp Spawner, job Job) (*Result, e
 		return res, nil
 	}
 
-	branch := snapshot.BranchForIssue(job.ProjectSlug, job.IssueNumber)
+	branch := job.Branch
 	prOut, prErr := r.Run(ctx, "gh", "pr", "list",
 		"--repo", job.RepoSlug,
 		"--head", branch, "--state", "open",

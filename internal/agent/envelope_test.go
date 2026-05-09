@@ -11,6 +11,7 @@ func TestBuildEnvelope_ContainsContract(t *testing.T) {
 		IssueTitle:   "Refactor login",
 		IssueBody:    "make it work",
 		ProjectSlug:  "auth",
+		Branch:       "klanky/auth/issue-42",
 		WorktreePath: "/tmp/wt",
 	})
 	wants := []string{
@@ -34,7 +35,7 @@ func TestBuildEnvelope_ContainsContract(t *testing.T) {
 func TestBuildEnvelope_DoesNotMentionV1Vocabulary(t *testing.T) {
 	got := BuildEnvelope(EnvelopeData{
 		IssueNumber: 1, IssueTitle: "x", IssueBody: "y",
-		ProjectSlug: "auth", WorktreePath: "/wt",
+		ProjectSlug: "auth", Branch: "klanky/auth/issue-1", WorktreePath: "/wt",
 	})
 	for _, banned := range []string{"feat-1", "task-", "feature ", "Phase"} {
 		if strings.Contains(got, banned) {

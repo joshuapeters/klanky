@@ -22,6 +22,7 @@ import (
 	"github.com/joshuapeters/klanky/internal/agent"
 	"github.com/joshuapeters/klanky/internal/config"
 	"github.com/joshuapeters/klanky/internal/gh"
+	"github.com/joshuapeters/klanky/internal/identifiers"
 	"github.com/joshuapeters/klanky/internal/lock"
 	"github.com/joshuapeters/klanky/internal/reconcile"
 	"github.com/joshuapeters/klanky/internal/snapshot"
@@ -42,6 +43,7 @@ type Deps struct {
 	Spawner     agent.Spawner
 	Config      *config.Config
 	ProjectSlug string
+	Identifiers identifiers.Identifiers
 	RepoRoot    string // absolute path to the main checkout
 	StateRoot   string // typically ~/.klanky
 	Output      string // "text" or "json"
@@ -79,7 +81,7 @@ func Run(ctx context.Context, d Deps) error {
 	}
 
 	// 1. Acquire lock.
-	lockPath := lock.Path(d.StateRoot, d.Config.Repo.Owner, d.Config.Repo.Name, d.ProjectSlug)
+	lockPath := d.Identifiers.LockPath()
 	lk, err := lock.Acquire(lockPath)
 	if err != nil {
 		return err
@@ -94,7 +96,7 @@ func Run(ctx context.Context, d Deps) error {
 	}
 
 	// 3. Reconcile (apply mutations to GH and snapshot).
-	actions := reconcile.Reconcile(snap)
+	actions := reconcile.Reconcile(snap, d.Identifiers)
 	d.applyReconcile(ctx, project, snap, actions)
 
 	// 4. Eligibility + nothing-to-do scenarios.
@@ -246,9 +248,9 @@ func selectWork(snap *snapshot.Snapshot) ([]snapshot.Issue, *scenarioMsg) {
 
 // runOne executes the per-issue lifecycle. Always returns a populated Result.
 func (d Deps) runOne(ctx context.Context, project config.Project, issue snapshot.Issue, repoSlug string) agent.Result {
-	wtPath := worktree.Path(d.StateRoot, d.Config.Repo.Owner, d.Config.Repo.Name, d.ProjectSlug, issue.Number)
-	logPath := worktree.LogPath(d.StateRoot, d.Config.Repo.Owner, d.Config.Repo.Name, d.ProjectSlug, issue.Number)
-	branch := snapshot.BranchForIssue(d.ProjectSlug, issue.Number)
+	wtPath := d.Identifiers.WorktreePath(issue.Number)
+	logPath := d.Identifiers.LogPath(issue.Number)
+	branch := d.Identifiers.Branch(issue.Number)
 
 	if err := worktree.EnsureClean(ctx, d.Runner, d.RepoRoot, wtPath, branch, "main"); err != nil {
 		return d.markEarlyFailure(ctx, project, repoSlug, issue, wtPath, logPath, fmt.Sprintf("worktree setup failed: %v", err))
@@ -261,7 +263,7 @@ func (d Deps) runOne(ctx context.Context, project config.Project, issue snapshot
 	res, err := agent.RunAgent(ctx, d.Runner, d.Spawner, agent.Job{
 		ProjectSlug: d.ProjectSlug,
 		IssueNumber: issue.Number, IssueTitle: issue.Title, IssueBody: issue.Body,
-		WorktreePath: wtPath, LogPath: logPath, RepoSlug: repoSlug,
+		Branch: branch, WorktreePath: wtPath, LogPath: logPath, RepoSlug: repoSlug,
 		Timeout: d.Timeout,
 	})
 	if err != nil {
@@ -392,22 +394,6 @@ func (d Deps) logf(format string, a ...any) {
 	}
 	ts := time.Now().Format("15:04:05")
 	fmt.Fprintf(d.Stderr, "[%s] %s\n", ts, fmt.Sprintf(format, a...))
-}
-
-// LogPathFor returns the per-issue log path. Exposed for the cmd layer to
-// surface in user-facing messages.
-func LogPathFor(stateRoot, owner, repo, slug string, issueNumber int) string {
-	return worktree.LogPath(stateRoot, owner, repo, slug, issueNumber)
-}
-
-// WorktreePathFor returns the per-issue worktree path.
-func WorktreePathFor(stateRoot, owner, repo, slug string, issueNumber int) string {
-	return worktree.Path(stateRoot, owner, repo, slug, issueNumber)
-}
-
-// LockPathFor returns the per-project lock path.
-func LockPathFor(stateRoot, owner, repo, slug string) string {
-	return lock.Path(stateRoot, owner, repo, slug)
 }
 
 // DefaultStateRoot is ~/.klanky.

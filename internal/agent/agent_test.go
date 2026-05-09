@@ -36,6 +36,7 @@ func newJob(t *testing.T) Job {
 	return Job{
 		ProjectSlug: "auth",
 		IssueNumber: 42, IssueTitle: "Login UI", IssueBody: "do it",
+		Branch:       "klanky/auth/issue-42",
 		WorktreePath: dir,
 		LogPath:      filepath.Join(dir, "issue.log"),
 		RepoSlug:     "joshuapeters/klanky",

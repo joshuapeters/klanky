@@ -6,8 +6,15 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/joshuapeters/klanky/internal/identifiers"
 	"github.com/joshuapeters/klanky/internal/snapshot"
 )
+
+// testIDs returns an Identifiers for the given slug, suitable for tests that
+// don't need real filesystem paths.
+func testIDs(slug string) identifiers.Identifiers {
+	return identifiers.New("", "", "", slug)
+}
 
 func snap(slug string, issues []snapshot.Issue, prs map[string]snapshot.PR) *snapshot.Snapshot {
 	if prs == nil {
@@ -52,7 +59,7 @@ func TestRow1_ClosedIssueGoesToDone(t *testing.T) {
 		issue(1, "CLOSED", "In Progress"),
 		issue(2, "CLOSED", "Done"), // already Done — no action
 		issue(3, "CLOSED", ""),
-	}, nil))
+	}, nil), testIDs("auth"))
 	want := []Action{
 		{IssueNumber: 1, ItemID: "PVTI_1", NewStatus: "Done"},
 		{IssueNumber: 3, ItemID: "PVTI_3", NewStatus: "Done"},
@@ -63,14 +70,14 @@ func TestRow1_ClosedIssueGoesToDone(t *testing.T) {
 }
 
 func TestRow2_TodoIsNoOp(t *testing.T) {
-	got := Reconcile(snap("auth", []snapshot.Issue{issue(1, "OPEN", "Todo")}, nil))
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(1, "OPEN", "Todo")}, nil), testIDs("auth"))
 	if diff := cmp.Diff([]Action(nil), got); diff != "" {
 		t.Errorf("expected no actions (-want +got):\n%s", diff)
 	}
 }
 
 func TestRow3_InProgressWithoutPRGoesToNeedsAttention(t *testing.T) {
-	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Progress")}, nil))
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Progress")}, nil), testIDs("auth"))
 	a := find(got, 7)
 	if a == nil || a.NewStatus != "Needs Attention" {
 		t.Fatalf("got %+v, want Needs Attention", a)
@@ -82,9 +89,9 @@ func TestRow3_InProgressWithoutPRGoesToNeedsAttention(t *testing.T) {
 
 func TestRow4_InProgressWithOpenPRGoesToInReview(t *testing.T) {
 	prs := map[string]snapshot.PR{
-		snapshot.BranchForIssue("auth", 7): {Number: 99, State: "OPEN", URL: "x", HeadRefName: snapshot.BranchForIssue("auth", 7)},
+		"klanky/auth/issue-7": {Number: 99, State: "OPEN", URL: "x", HeadRefName: "klanky/auth/issue-7"},
 	}
-	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Progress")}, prs))
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Progress")}, prs), testIDs("auth"))
 	want := []Action{{IssueNumber: 7, ItemID: "PVTI_7", NewStatus: "In Review"}}
 	if diff := cmp.Diff(want, got, ignoreBreadcrumb); diff != "" {
 		t.Errorf("actions mismatch (-want +got):\n%s", diff)
@@ -93,9 +100,9 @@ func TestRow4_InProgressWithOpenPRGoesToInReview(t *testing.T) {
 
 func TestRow6_InReviewWithOpenPRIsNoOp(t *testing.T) {
 	prs := map[string]snapshot.PR{
-		snapshot.BranchForIssue("auth", 7): {Number: 99, State: "OPEN", HeadRefName: snapshot.BranchForIssue("auth", 7)},
+		"klanky/auth/issue-7": {Number: 99, State: "OPEN", HeadRefName: "klanky/auth/issue-7"},
 	}
-	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Review")}, prs))
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Review")}, prs), testIDs("auth"))
 	if diff := cmp.Diff([]Action(nil), got); diff != "" {
 		t.Errorf("expected no actions (-want +got):\n%s", diff)
 	}
@@ -103,9 +110,9 @@ func TestRow6_InReviewWithOpenPRIsNoOp(t *testing.T) {
 
 func TestRow7_InReviewWithClosedPRGoesToNeedsAttention(t *testing.T) {
 	prs := map[string]snapshot.PR{
-		snapshot.BranchForIssue("auth", 7): {Number: 99, State: "CLOSED", HeadRefName: snapshot.BranchForIssue("auth", 7)},
+		"klanky/auth/issue-7": {Number: 99, State: "CLOSED", HeadRefName: "klanky/auth/issue-7"},
 	}
-	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Review")}, prs))
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Review")}, prs), testIDs("auth"))
 	a := find(got, 7)
 	if a == nil || a.NewStatus != "Needs Attention" {
 		t.Fatalf("got %+v", a)
@@ -116,7 +123,7 @@ func TestRow7_InReviewWithClosedPRGoesToNeedsAttention(t *testing.T) {
 }
 
 func TestRow8_InReviewWithoutPRGoesToNeedsAttention(t *testing.T) {
-	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Review")}, nil))
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "In Review")}, nil), testIDs("auth"))
 	a := find(got, 7)
 	if a == nil || a.NewStatus != "Needs Attention" {
 		t.Fatalf("got %+v", a)
@@ -127,14 +134,14 @@ func TestRow8_InReviewWithoutPRGoesToNeedsAttention(t *testing.T) {
 }
 
 func TestRow9_NeedsAttentionIsNoOp(t *testing.T) {
-	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "Needs Attention")}, nil))
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "Needs Attention")}, nil), testIDs("auth"))
 	if diff := cmp.Diff([]Action(nil), got); diff != "" {
 		t.Errorf("expected no actions (-want +got):\n%s", diff)
 	}
 }
 
 func TestRow10_OpenIssueWithDoneStatusGoesToNeedsAttention(t *testing.T) {
-	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "Done")}, nil))
+	got := Reconcile(snap("auth", []snapshot.Issue{issue(7, "OPEN", "Done")}, nil), testIDs("auth"))
 	a := find(got, 7)
 	if a == nil || a.NewStatus != "Needs Attention" {
 		t.Fatalf("got %+v", a)

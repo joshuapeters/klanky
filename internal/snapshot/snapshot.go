@@ -208,9 +208,3 @@ func fetchPRs(ctx context.Context, r gh.Runner, repoSlug, projectSlug string) (m
 	}
 	return idx, nil
 }
-
-// BranchForIssue returns the klanky branch name for a (project slug, issue
-// number) pair.
-func BranchForIssue(projectSlug string, issueNumber int) string {
-	return fmt.Sprintf("klanky/%s/issue-%d", projectSlug, issueNumber)
-}

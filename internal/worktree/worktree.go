@@ -8,22 +8,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/joshuapeters/klanky/internal/gh"
 )
-
-// Path returns the per-issue worktree path. owner and repo are lowercased.
-func Path(stateRoot, owner, repo, slug string, issueNumber int) string {
-	return filepath.Join(stateRoot, "worktrees", strings.ToLower(owner), strings.ToLower(repo), slug,
-		fmt.Sprintf("issue-%d", issueNumber))
-}
-
-// LogPath returns the per-issue agent log path.
-func LogPath(stateRoot, owner, repo, slug string, issueNumber int) string {
-	return filepath.Join(stateRoot, "logs", strings.ToLower(owner), strings.ToLower(repo), slug,
-		fmt.Sprintf("issue-%d.log", issueNumber))
-}
 
 // EnsureClean guarantees a fresh git worktree at wtPath on `branch`,
 // branched from `base`. Wipes any existing path and prunes git's worktree

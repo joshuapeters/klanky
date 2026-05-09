@@ -8,22 +8,6 @@ import (
 	"github.com/joshuapeters/klanky/internal/gh"
 )
 
-func TestPath_Lowercases(t *testing.T) {
-	got := Path("/root", "JoshuaPeters", "Klanky", "auth", 42)
-	want := "/root/worktrees/joshuapeters/klanky/auth/issue-42"
-	if got != want {
-		t.Errorf("Path = %q, want %q", got, want)
-	}
-}
-
-func TestLogPath(t *testing.T) {
-	got := LogPath("/root", "owner", "repo", "auth", 42)
-	want := "/root/logs/owner/repo/auth/issue-42.log"
-	if got != want {
-		t.Errorf("LogPath = %q, want %q", got, want)
-	}
-}
-
 func TestEnsureClean_RunsExpectedCommands(t *testing.T) {
 	dir := t.TempDir()
 	wt := dir + "/wt/issue-1"

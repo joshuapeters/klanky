@@ -88,7 +88,7 @@ func TestFetch_FiltersUntrackedAndExtractsBlockers(t *testing.T) {
 			},
 		}},
 		PRsByBranch: map[string]PR{
-			BranchForIssue("auth", 42): {
+			"klanky/auth/issue-42": {
 				Number: 99, URL: "https://x", State: "OPEN",
 				HeadRefName: "klanky/auth/issue-42",
 			},
@@ -106,8 +106,3 @@ func TestFetch_UnknownSlug(t *testing.T) {
 	}
 }
 
-func TestBranchForIssue(t *testing.T) {
-	if got := BranchForIssue("auth", 42); got != "klanky/auth/issue-42" {
-		t.Errorf("BranchForIssue = %q", got)
-	}
-}

@@ -8,14 +8,6 @@ import (
 	"testing"
 )
 
-func TestPath_Lowercases(t *testing.T) {
-	got := Path("/root", "JoshuaPeters", "Klanky", "auth")
-	want := "/root/locks/joshuapeters/klanky/auth.lock"
-	if got != want {
-		t.Errorf("Path = %q, want %q", got, want)
-	}
-}
-
 func TestAcquire_FreshAndRelease(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "x.lock")
