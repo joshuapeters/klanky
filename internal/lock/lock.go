@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -16,19 +17,7 @@ import (
 // tuple. stateRoot is typically `~/.klanky`. owner and repo are lowercased to
 // match the directory layout.
 func Path(stateRoot, owner, repo, slug string) string {
-	return filepath.Join(stateRoot, "locks", lc(owner), lc(repo), slug+".lock")
-}
-
-func lc(s string) string {
-	out := make([]byte, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		out[i] = c
-	}
-	return string(out)
+	return filepath.Join(stateRoot, "locks", strings.ToLower(owner), strings.ToLower(repo), slug+".lock")
 }
 
 // Lock represents a held klanky runner lock. Call Release on graceful
