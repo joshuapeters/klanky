@@ -230,9 +230,9 @@ func createIssue(ctx context.Context, r gh.Runner, repoSlug, title, body string)
 		return nil, fmt.Errorf("gh issue create: %w", err)
 	}
 	url := strings.TrimSpace(string(out))
-	number, err := numberFromIssueURL(url)
-	if err != nil {
-		return nil, fmt.Errorf("parse issue URL %q: %w", url, err)
+	number := gh.LastIssueNumberFromURL(url)
+	if number == 0 {
+		return nil, fmt.Errorf("parse issue URL %q: no /issues/<n>", url)
 	}
 	viewOut, err := r.Run(ctx, "gh", "issue", "view", strconv.Itoa(number),
 		"--repo", repoSlug, "--json", "id")
@@ -246,24 +246,6 @@ func createIssue(ctx context.Context, r gh.Runner, repoSlug, title, body string)
 		return nil, fmt.Errorf("parse issue view: %w", jerr)
 	}
 	return &issueRef{Number: number, URL: url, NodeID: info.ID}, nil
-}
-
-// numberFromIssueURL returns the trailing /issues/<n> integer.
-func numberFromIssueURL(url string) (int, error) {
-	const marker = "/issues/"
-	i := strings.LastIndex(url, marker)
-	if i < 0 {
-		return 0, fmt.Errorf("no /issues/<n> in URL")
-	}
-	rest := url[i+len(marker):]
-	end := 0
-	for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
-		end++
-	}
-	if end == 0 {
-		return 0, fmt.Errorf("no digits after /issues/")
-	}
-	return strconv.Atoi(rest[:end])
 }
 
 // addToProject calls `gh project item-add` (which under the hood is the

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"text/tabwriter"
 	"time"
@@ -230,7 +231,7 @@ func selectWork(snap *snapshot.Snapshot) ([]snapshot.Issue, *scenarioMsg) {
 		}
 		return nil, &scenarioMsg{
 			msg: fmt.Sprintf("Project %q: %d PR(s) awaiting review:\n%s\nMerge or close them, then re-run.",
-				snap.ProjectSlug, len(awaitingReview), join(b, "\n")),
+				snap.ProjectSlug, len(awaitingReview), strings.Join(b, "\n")),
 		}
 	}
 	if allEligibleEmpty {
@@ -243,18 +244,6 @@ func selectWork(snap *snapshot.Snapshot) ([]snapshot.Issue, *scenarioMsg) {
 	return eligible, nil
 }
 
-// join is a slim local strings.Join to avoid an extra import in this file.
-func join(parts []string, sep string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	out := parts[0]
-	for _, p := range parts[1:] {
-		out += sep + p
-	}
-	return out
-}
-
 // runOne executes the per-issue lifecycle. Always returns a populated Result.
 func (d Deps) runOne(ctx context.Context, project config.Project, issue snapshot.Issue, repoSlug string) agent.Result {
 	wtPath := worktree.Path(d.StateRoot, d.Config.Repo.Owner, d.Config.Repo.Name, d.ProjectSlug, issue.Number)
@@ -262,7 +251,7 @@ func (d Deps) runOne(ctx context.Context, project config.Project, issue snapshot
 	branch := snapshot.BranchForIssue(d.ProjectSlug, issue.Number)
 
 	if err := worktree.EnsureClean(ctx, d.Runner, d.RepoRoot, wtPath, branch, "main"); err != nil {
-		return d.markEarlyFailure(ctx, project, repoSlug, issue, fmt.Sprintf("worktree setup failed: %v", err))
+		return d.markEarlyFailure(ctx, project, repoSlug, issue, wtPath, logPath, fmt.Sprintf("worktree setup failed: %v", err))
 	}
 	if err := statuswrite.Write(ctx, d.Runner, project, issue.ItemID, "In Progress", time.Second); err != nil {
 		d.logf("warn: could not set Status=In Progress for #%d: %v", issue.Number, err)
@@ -276,7 +265,7 @@ func (d Deps) runOne(ctx context.Context, project config.Project, issue snapshot
 		Timeout: d.Timeout,
 	})
 	if err != nil {
-		return d.markEarlyFailure(ctx, project, repoSlug, issue, fmt.Sprintf("agent error: %v", err))
+		return d.markEarlyFailure(ctx, project, repoSlug, issue, wtPath, logPath, fmt.Sprintf("agent error: %v", err))
 	}
 
 	switch res.Outcome {
@@ -298,24 +287,28 @@ func (d Deps) runOne(ctx context.Context, project config.Project, issue snapshot
 	return *res
 }
 
-// markEarlyFailure handles cases where the issue can't even start (worktree
-// setup failed, claude binary missing). Writes Status=Needs Attention and
-// posts a breadcrumb (best-effort).
-func (d Deps) markEarlyFailure(ctx context.Context, project config.Project, repoSlug string, issue snapshot.Issue, reason string) agent.Result {
+// postNeedsAttention writes Status=Needs Attention, counts prior attempts,
+// builds and posts a breadcrumb (all best-effort). data.Attempt is filled in here.
+func (d Deps) postNeedsAttention(ctx context.Context, project config.Project, repoSlug string, issue snapshot.Issue, data agent.BreadcrumbData) {
 	if err := statuswrite.Write(ctx, d.Runner, project, issue.ItemID, "Needs Attention", time.Second); err != nil {
 		d.logf("warn: could not set Status=Needs Attention for #%d: %v", issue.Number, err)
 	}
-	wtPath := worktree.Path(d.StateRoot, d.Config.Repo.Owner, d.Config.Repo.Name, d.ProjectSlug, issue.Number)
-	logPath := worktree.LogPath(d.StateRoot, d.Config.Repo.Owner, d.Config.Repo.Name, d.ProjectSlug, issue.Number)
 	prior, _ := agent.CountPriorAttempts(ctx, d.Runner, repoSlug, issue.Number)
-	body := agent.BuildBreadcrumb(agent.BreadcrumbData{
-		Attempt: prior + 1, StartedAt: time.Now(), Duration: 0,
-		Outcome: reason, WorktreePath: wtPath, LogPath: logPath,
-	})
+	data.Attempt = prior + 1
+	body := agent.BuildBreadcrumb(data)
 	if err := agent.PostBreadcrumb(ctx, d.Runner, repoSlug, issue.Number, body); err != nil {
 		d.logf("warn: could not post breadcrumb for #%d: %v", issue.Number, err)
 	}
-	d.logf("#%d: needs-attention (attempt %d) — %s", issue.Number, prior+1, reason)
+	d.logf("#%d: needs-attention (attempt %d) — %s", issue.Number, data.Attempt, data.Outcome)
+}
+
+// markEarlyFailure handles issues that can't start (worktree setup failed,
+// claude binary missing). Posts a needs-attention breadcrumb with zero duration.
+func (d Deps) markEarlyFailure(ctx context.Context, project config.Project, repoSlug string, issue snapshot.Issue, wtPath, logPath, reason string) agent.Result {
+	d.postNeedsAttention(ctx, project, repoSlug, issue, agent.BreadcrumbData{
+		StartedAt: time.Now(), Outcome: reason,
+		WorktreePath: wtPath, LogPath: logPath,
+	})
 	return agent.Result{
 		IssueNumber: issue.Number, Outcome: agent.OutcomeNeedsAttention,
 		OutcomeReason: reason, StartedAt: time.Now(),
@@ -324,20 +317,11 @@ func (d Deps) markEarlyFailure(ctx context.Context, project config.Project, repo
 
 // markNeedsAttention handles a normal needs-attention result: write Status, post breadcrumb.
 func (d Deps) markNeedsAttention(ctx context.Context, project config.Project, repoSlug string, issue snapshot.Issue, res *agent.Result, wtPath, logPath string) {
-	if err := statuswrite.Write(ctx, d.Runner, project, issue.ItemID, "Needs Attention", time.Second); err != nil {
-		d.logf("warn: could not set Status=Needs Attention for #%d: %v", issue.Number, err)
-	}
-	prior, _ := agent.CountPriorAttempts(ctx, d.Runner, repoSlug, issue.Number)
-	attempt := prior + 1
-	body := agent.BuildBreadcrumb(agent.BreadcrumbData{
-		Attempt: attempt, StartedAt: res.StartedAt, Duration: res.Duration,
+	d.postNeedsAttention(ctx, project, repoSlug, issue, agent.BreadcrumbData{
+		StartedAt: res.StartedAt, Duration: res.Duration,
 		Outcome: res.OutcomeReason, WorktreePath: wtPath, LogPath: logPath,
 		LastLogLines: tailLog(logPath, 20),
 	})
-	if err := agent.PostBreadcrumb(ctx, d.Runner, repoSlug, issue.Number, body); err != nil {
-		d.logf("warn: could not post breadcrumb for #%d: %v", issue.Number, err)
-	}
-	d.logf("#%d: needs-attention (attempt %d) — %s", issue.Number, attempt, res.OutcomeReason)
 }
 
 func tailLog(path string, n int) []string {
