@@ -13,6 +13,7 @@ import (
 	"github.com/joshuapeters/klanky/internal/agent"
 	"github.com/joshuapeters/klanky/internal/config"
 	"github.com/joshuapeters/klanky/internal/gh"
+	"github.com/joshuapeters/klanky/internal/identifiers"
 	"github.com/joshuapeters/klanky/internal/snapshot"
 )
 
@@ -162,6 +163,7 @@ func TestRun_NothingToDo_AllClosed(t *testing.T) {
 	err := Run(context.Background(), Deps{
 		Runner: fake, Spawner: agentSpawnerAdapter{&fakeSpawner{}},
 		Config: cfg, ProjectSlug: "auth",
+		Identifiers: identifiers.New(stateRoot, "joshuapeters", "klanky", "auth"),
 		RepoRoot: dir, StateRoot: stateRoot, Output: "text",
 		Stdout: stdout, Stderr: stderr,
 	})
@@ -243,6 +245,7 @@ func TestRun_HappyPath_OneEligibleIssue(t *testing.T) {
 	err := Run(context.Background(), Deps{
 		Runner: fake, Spawner: agentSpawnerAdapter{&fakeSpawner{exitCode: 0}},
 		Config: cfg, ProjectSlug: "auth",
+		Identifiers: identifiers.New(stateRoot, "joshuapeters", "klanky", "auth"),
 		RepoRoot: dir, StateRoot: stateRoot, Output: "text",
 		Timeout: 5 * time.Second,
 		Stdout:  stdout, Stderr: stderr,
@@ -258,7 +261,7 @@ func TestRun_HappyPath_OneEligibleIssue(t *testing.T) {
 	}
 
 	// Lock cleanup.
-	if _, err := os.Stat(LockPathFor(stateRoot, "joshuapeters", "klanky", "auth")); !os.IsNotExist(err) {
+	if _, err := os.Stat(identifiers.New(stateRoot, "joshuapeters", "klanky", "auth").LockPath()); !os.IsNotExist(err) {
 		t.Errorf("lock should have been released")
 	}
 }

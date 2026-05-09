@@ -5,22 +5,22 @@ package agent
 
 import "fmt"
 
-// EnvelopeData are the substitution inputs for the prompt template. Five
-// fields, all required.
+// EnvelopeData are the substitution inputs for the prompt template. All
+// fields are required.
 type EnvelopeData struct {
 	IssueNumber  int
 	IssueTitle   string
 	IssueBody    string
 	ProjectSlug  string
+	Branch       string
 	WorktreePath string
 }
 
 // envelopeTemplate is the verbatim template from project_envelope_contract.md.
-// The five `%s`/`%d` substitutions are filled by BuildEnvelope. Any visible
-// drift from the locked contract is a bug.
+// Any visible drift from the locked contract is a bug.
 const envelopeTemplate = "You are working on issue #%d in project `%s`: %s\n" +
 	"\n" +
-	"You are in a git worktree at %s, on branch `klanky/%s/issue-%d`,\n" +
+	"You are in a git worktree at %s, on branch `%s`,\n" +
 	"branched from `main`. Do all your work here. Do not push or modify any other branch.\n" +
 	"\n" +
 	"# Issue\n" +
@@ -58,7 +58,7 @@ const envelopeTemplate = "You are working on issue #%d in project `%s`: %s\n" +
 	"\n" +
 	"# Constraints\n" +
 	"\n" +
-	"- Do not push to any branch other than `klanky/%s/issue-%d`.\n" +
+	"- Do not push to any branch other than `%s`.\n" +
 	"- Do not merge any PR.\n" +
 	"- Do not modify other open issues or the project board.\n"
 
@@ -66,10 +66,10 @@ const envelopeTemplate = "You are working on issue #%d in project `%s`: %s\n" +
 func BuildEnvelope(d EnvelopeData) string {
 	return fmt.Sprintf(envelopeTemplate,
 		d.IssueNumber, d.ProjectSlug, d.IssueTitle, // header
-		d.WorktreePath, d.ProjectSlug, d.IssueNumber, // worktree + branch
-		d.IssueBody,                                  // # Issue
-		d.IssueNumber, d.IssueNumber,                  // two Closes #N
-		d.IssueNumber, d.IssueNumber,                  // give-up + retry-context
-		d.ProjectSlug, d.IssueNumber,                  // constraints branch
+		d.WorktreePath, d.Branch,                    // worktree + branch
+		d.IssueBody,                                 // # Issue
+		d.IssueNumber, d.IssueNumber,                // two Closes #N
+		d.IssueNumber, d.IssueNumber,                // give-up + retry-context
+		d.Branch,                                    // constraints branch
 	)
 }

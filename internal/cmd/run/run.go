@@ -13,6 +13,7 @@ import (
 	"github.com/joshuapeters/klanky/internal/agent"
 	"github.com/joshuapeters/klanky/internal/config"
 	"github.com/joshuapeters/klanky/internal/gh"
+	"github.com/joshuapeters/klanky/internal/identifiers"
 	"github.com/joshuapeters/klanky/internal/runner"
 )
 
@@ -63,11 +64,14 @@ func RunRun(ctx context.Context, opts Options, stdout, stderr interface {
 		return err
 	}
 
+	ids := identifiers.New(stateRoot, cfg.Repo.Owner, cfg.Repo.Name, opts.ProjectSlug)
+
 	d := runner.Deps{
 		Runner:      gh.RealRunner{},
 		Spawner:     agent.RealSpawner{},
 		Config:      cfg,
 		ProjectSlug: opts.ProjectSlug,
+		Identifiers: ids,
 		RepoRoot:    repoRoot,
 		StateRoot:   stateRoot,
 		Output:      opts.Output,

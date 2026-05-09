@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/joshuapeters/klanky/internal/identifiers"
 	"github.com/joshuapeters/klanky/internal/snapshot"
 )
 
@@ -28,10 +29,10 @@ type Action struct {
 
 // Reconcile returns the list of state updates needed to align Status with
 // truth. Implements the rows from project_runner_design.md.
-func Reconcile(snap *snapshot.Snapshot) []Action {
+func Reconcile(snap *snapshot.Snapshot, ids identifiers.Identifiers) []Action {
 	var actions []Action
 	for _, issue := range snap.Issues {
-		branch := snapshot.BranchForIssue(snap.ProjectSlug, issue.Number)
+		branch := ids.Branch(issue.Number)
 		pr, hasPR := snap.PRsByBranch[branch]
 
 		// Row 1: closed issue → Done.

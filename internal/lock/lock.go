@@ -8,17 +8,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 )
-
-// Path returns the lock file path for a (klanky-state-root, owner, repo, slug)
-// tuple. stateRoot is typically `~/.klanky`. owner and repo are lowercased to
-// match the directory layout.
-func Path(stateRoot, owner, repo, slug string) string {
-	return filepath.Join(stateRoot, "locks", strings.ToLower(owner), strings.ToLower(repo), slug+".lock")
-}
 
 // Lock represents a held klanky runner lock. Call Release on graceful
 // shutdown (typically via defer at the top of a run).
